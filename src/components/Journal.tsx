@@ -26,7 +26,7 @@ import {
 } from "@/lib/nutrition";
 import { dismissReminder, dueReminder, loadReminders } from "@/lib/reminders";
 import { inlineText, splitMeals } from "@/lib/note";
-import { aiLabel, effectiveMode, parseText } from "@/lib/parse";
+import { effectiveMode, parseText } from "@/lib/parse";
 import { nutritionOf, scaled, servingOf, type Row } from "@/lib/noterows";
 import type { ParsedItem } from "@/lib/describe";
 import { MEAL_LABEL, type Entry, type Meal, type Preset, type Profile } from "@/lib/types";
@@ -308,7 +308,7 @@ export default function Journal({ date, profile, banner }: { date: string; profi
 
       {banner}
 
-      <GoalBlock style={profile.style} totals={totals} goals={goals} />
+      <GoalBlock style={profile.style} totals={totals} goals={goals} href={`/nutrients/${date}`} />
 
       {due && isToday && (
         <div className="card sm" style={{ display: "flex", alignItems: "center", gap: 12 }} role="status">
@@ -464,17 +464,6 @@ export default function Journal({ date, profile, banner }: { date: string; profi
           </div>
         )}
       </div>
-
-      {(dayEntries.length > 0 || rows.length > 0) && (
-        <div className="muted" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 12.5 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="sparkles" size={14} /> {aiLabel(aiMode)}
-          </span>
-          <Link href={`/nutrients/${date}`} style={{ textDecoration: "underline" }}>
-            Macros &amp; micros →
-          </Link>
-        </div>
-      )}
 
       <Sheet
         open={!!open}

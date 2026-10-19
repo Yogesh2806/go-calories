@@ -9,6 +9,7 @@ import { DESCRIBE_SYSTEM, extractJson, normalizeItems, type ParsedItem } from ".
 
 const KEY_STORE = "gc:geminiKey";
 const MODEL_STORE = "gc:geminiModel";
+const LIST_STORE = "gc:geminiModels";
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 function read(k: string): string {
@@ -27,9 +28,22 @@ function write(k: string, v: string) {
   }
 }
 
+/** The models Google says this key can use, remembered from the last key check. */
+function cachedModels(): string[] {
+  try {
+    const v = JSON.parse(read(LIST_STORE) || "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export const getGeminiKey = () => read(KEY_STORE);
 export const setGeminiKey = (k: string) => write(KEY_STORE, k.trim());
-export const clearGeminiKey = () => write(KEY_STORE, "");
+export const clearGeminiKey = () => {
+  write(KEY_STORE, "");
+  write(LIST_STORE, "");
+};
 export const getGeminiModel = () => read(MODEL_STORE) || DEFAULT_GEMINI_MODEL;
 export const setGeminiModel = (m: string) => write(MODEL_STORE, m.trim() === DEFAULT_GEMINI_MODEL ? "" : m.trim());
 export const maskKey = (k: string) => (k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : "saved");
@@ -140,10 +154,21 @@ export async function checkGeminiKey(key: string): Promise<string[]> {
   }
   if (!res.ok) throw await failure(res, "");
   const data = (await res.json()) as { models?: { name?: string; supportedGenerationMethods?: string[] }[] };
-  return (data.models ?? [])
+  const list = (data.models ?? [])
     .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
     .map((m) => (m.name ?? "").replace(/^models\//, ""))
     .filter(Boolean);
+  write(LIST_STORE, JSON.stringify(list));
+  return list;
+}
+
+/** Stable fast models worth trying, best first: the preferred ones, then any other flash model the key has. */
+function chainFor(chosen: string, available: string[]): string[] {
+  const prefs = [DEFAULT_GEMINI_MODEL, ...FALLBACK_MODELS];
+  if (available.length === 0) return [chosen, ...prefs.filter((m) => m !== chosen)].slice(0, 4);
+  const flash = available.filter((m) => /flash/.test(m) && !/(preview|exp|image|tts|live|audio|thinking|robotics|computer)/.test(m));
+  const ordered = [chosen, ...prefs, ...flash].filter((m) => available.includes(m));
+  return [...new Set(ordered)].slice(0, 4);
 }
 
 /** The best fast model this key can use, from what Google says is available. */
@@ -158,17 +183,28 @@ export function pickGeminiModel(available: string[]): string | null {
  *  so a spike on one model does not stop you logging. A wrong or blocked key stops straight away. */
 export async function parseWithGemini(text: string, key = getGeminiKey(), model = getGeminiModel()): Promise<ParsedItem[]> {
   if (!key) throw new Error("Add your Gemini API key in AI Food Parsing settings first.");
-  const chain = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
+  let available = cachedModels();
+  if (available.length === 0) {
+    try {
+      available = await checkGeminiKey(key); // learn which models this key really has (also catches a bad key early)
+    } catch (e) {
+      if (e instanceof Error && /API key|isn't allowed/.test(e.message)) throw e;
+    }
+  }
+  const chosen = chainFor(model, available);
+  const chain = chosen.length ? chosen : [model];
+  const lead = chain[0];
+  const tried: string[] = [];
   let firstError: Error | null = null;
   let timedOut = false;
   try {
     for (const m of chain) {
-      for (let attempt = 0; attempt < (m === model ? 2 : 1); attempt++) {
+      for (let attempt = 0; attempt < (m === lead ? 2 : 1); attempt++) {
         let res: Response | null = null;
         try {
           for (const rung of LADDER) {
             res = await request(key, m, text, rung, 14_000);
-            if (res.status !== 400) break;
+            if (res.status !== 400 && res.status !== 500) break; // 400/500: this model dislikes the request shape, try a plainer one
             let msg = "";
             try {
               msg = ((await res.clone().json()) as { error?: { message?: string } }).error?.message ?? "";
@@ -180,6 +216,7 @@ export async function parseWithGemini(text: string, key = getGeminiKey(), model 
         } catch (e) {
           if (isTimeout(e)) {
             timedOut = true;
+            tried.push(`${m}: no answer in 14s`);
             break; // too slow: try the next model
           }
           throw e;
@@ -189,14 +226,15 @@ export async function parseWithGemini(text: string, key = getGeminiKey(), model 
         const err = await failure(res, m);
         if (res.status === 401 || res.status === 403) throw err; // the key isn't allowed
         firstError ??= err;
-        if (BUSY.has(res.status) && attempt === 0 && m === model) {
+        if (attempt === 0 || res.status !== 503) tried.push(`${m}: ${res.status}`);
+        if (BUSY.has(res.status) && attempt === 0 && m === lead) {
           await sleep(900); // one quick retry on the chosen model
           continue;
         }
         break; // try the next model
       }
     }
-    if (firstError) throw firstError;
+    if (firstError) throw new Error(`${firstError.message} (Tried ${tried.join(", ")}.)`);
     throw new Error(timedOut ? "Gemini took too long. Try again." : "Gemini didn't answer. Try again.");
   } catch (e) {
     if (isTimeout(e)) throw new Error("Gemini took too long. Try again.");

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import Icon from "@/components/Icon";
 import type { Goals } from "@/lib/nutrition";
 import { kcal } from "@/lib/nutrition";
 import type { Nutrition, UiStyle } from "@/lib/types";
@@ -26,10 +28,13 @@ export default function GoalBlock({
   style,
   totals,
   goals,
+  href,
 }: {
   style: UiStyle;
   totals: Nutrition;
   goals: Goals;
+  /** Where tapping the block goes (today's macros & micros). */
+  href: string;
 }) {
   const left = goals.calories - totals.calories;
   const pct = Math.min(100, Math.round((totals.calories / goals.calories) * 100));
@@ -44,26 +49,29 @@ export default function GoalBlock({
 
   if (style === "paper") {
     return (
-      <div aria-label="Today's calories">
+      <Link href={href} className="goal-link" aria-label="Open macros and micros for this day">
         <div className="goal-numbers">
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span className="goal-big">{kcal(totals.calories)}</span>
             <span style={{ fontSize: 13.5, color: "var(--ink-3)" }}>of {kcal(goals.calories)} kcal</span>
           </div>
-          <span style={{ fontSize: 14, fontWeight: 600, color: left < 0 ? "var(--danger)" : "var(--accent-text)" }}>{leftText}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 14, fontWeight: 600, color: left < 0 ? "var(--danger)" : "var(--accent-text)" }}>
+            {leftText}
+            <Icon name="chevR" size={14} stroke={2} style={{ color: "var(--ink-3)" }} />
+          </span>
         </div>
         <div className="bar" style={{ marginTop: 10 }}>
           <i style={{ width: `${pct}%`, background: left < 0 ? "var(--danger)" : undefined }} />
         </div>
         <div style={{ display: "flex", gap: 16, marginTop: 12 }}>{macros}</div>
-      </div>
+      </Link>
     );
   }
 
   const circ = 251.3;
   const off = Math.round(circ * (1 - Math.min(1, totals.calories / goals.calories)) * 10) / 10;
   return (
-    <div className="card" style={{ padding: "16px 18px", borderRadius: 28 }} aria-label="Today's calories">
+    <Link href={href} className="card goal-link" style={{ padding: "16px 18px", borderRadius: 28 }} aria-label="Open macros and micros for this day">
       <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
         <div style={{ position: "relative", width: 104, height: 104, flexShrink: 0 }}>
           <svg width="104" height="104" viewBox="0 0 100 100" style={{ transform: "rotate(-90deg)" }} aria-hidden="true">
@@ -95,6 +103,6 @@ export default function GoalBlock({
           {macros}
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

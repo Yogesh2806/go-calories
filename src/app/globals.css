@@ -1075,6 +1075,22 @@ textarea.input {
 }
 
 /* ================= Goal block ================= */
+.goal-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.goal-link:active {
+  opacity: 0.7;
+  transform: scale(0.985);
+}
+.goal-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 6px;
+  border-radius: 12px;
+}
 .goal-numbers {
   display: flex;
   align-items: baseline;
