@@ -6,8 +6,9 @@
 import type { AiMode } from "./types";
 import type { ParsedItem } from "./describe";
 import { chromeAvailability, parseWithChrome } from "./chromeai";
-import { isModelDownloaded, parseOnDevice, webgpuAvailable } from "./ondevice";
+import { DEVICE_CRASHED_MESSAGE, deviceCrashed, isModelDownloaded, parseOnDevice, webgpuAvailable } from "./ondevice";
 import { getGeminiKey, parseWithGemini } from "./gemini";
+import { isPhoneOrTablet } from "./device";
 
 const FALLBACK_KEY = "gc:ai-fallback";
 const LAST_KEY = "gc:ai-last";
@@ -52,8 +53,9 @@ function saveLast(l: LastCheck) {
 
 /** Can this engine run right now, on this device? */
 export async function engineReady(m: AiMode): Promise<boolean> {
+  if (m !== "cloud" && isPhoneOrTablet()) return false; // too heavy for a phone's browser tab
   if (m === "chrome") return (await chromeAvailability()) === "available";
-  if (m === "device") return webgpuAvailable() && (await isModelDownloaded());
+  if (m === "device") return webgpuAvailable() && !deviceCrashed() && (await isModelDownloaded());
   return !!getGeminiKey();
 }
 
@@ -73,6 +75,7 @@ async function notReadyMessage(m: AiMode): Promise<string> {
   }
   if (m === "device") {
     if (!webgpuAvailable()) return "This browser doesn't support WebGPU. Switch to Gemini in AI food parsing settings.";
+    if (deviceCrashed()) return DEVICE_CRASHED_MESSAGE;
     return "The on-device model isn't downloaded yet. Download it in AI food parsing settings.";
   }
   return "Add your own Gemini API key first. It's free from Google AI Studio.";
@@ -83,7 +86,7 @@ const ORDER: AiMode[] = ["chrome", "device", "cloud"];
 export async function parseText(mode: AiMode, text: string): Promise<ParsedItem[]> {
   const t = text.trim();
   const started = Date.now();
-  const candidates = getFallback() ? [mode, ...ORDER.filter((m) => m !== mode)] : [mode];
+  const candidates: AiMode[] = isPhoneOrTablet() ? ["cloud"] : getFallback() ? [mode, ...ORDER.filter((m) => m !== mode)] : [mode];
   let firstError: Error | null = null;
   for (const m of candidates) {
     if (!(await engineReady(m))) continue;
@@ -101,7 +104,12 @@ export async function parseText(mode: AiMode, text: string): Promise<ParsedItem[
       firstError ??= e instanceof Error ? e : new Error("Couldn't read that.");
     }
   }
-  throw firstError ?? new Error(await notReadyMessage(mode));
+  throw firstError ?? new Error(await notReadyMessage(candidates[0]));
+}
+
+/** The engine that will really run on this device: phones and tablets always use Gemini. */
+export function effectiveMode(mode: AiMode): AiMode {
+  return isPhoneOrTablet() ? "cloud" : mode;
 }
 
 export function aiLabel(mode: AiMode): string {

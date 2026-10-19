@@ -74,7 +74,7 @@ function request(key: string, model: string, text: string, withSchema: boolean) 
         contents: [{ role: "user", parts: [{ text }] }],
         generationConfig,
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(20_000),
     },
   );
 }
@@ -90,31 +90,55 @@ async function failure(res: Response, model: string): Promise<Error> {
   if (res.status === 401 || res.status === 403) return new Error("This API key isn't allowed to use Gemini. Create a fresh key in Google AI Studio.");
   if (res.status === 404) return new Error(`Model “${model}” wasn't found for your key. Change the model name under Advanced.`);
   if (res.status === 429) return new Error("Gemini's free-tier limit was hit. Wait a minute and try again.");
+  if (res.status >= 500) return new Error("Gemini is busy right now. Give it a moment and try again.");
   return new Error(`Gemini error ${res.status}. ${msg}`.trim().slice(0, 240));
 }
 
-/** Parses a plain-English meal description into food items using the user's own key. */
+/** Other Gemini models to try, in order, when the chosen one is busy or missing. */
+const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+const BUSY = new Set([429, 500, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function readReply(data: {
+  candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[];
+}): ParsedItem[] {
+  const out = (data.candidates?.[0]?.content?.parts ?? [])
+    .filter((p) => !p.thought)
+    .map((p) => p.text ?? "")
+    .join("");
+  if (!out) throw new Error("Gemini returned nothing. Try rephrasing.");
+  const items = normalizeItems(extractJson(out));
+  if (items.length === 0) throw new Error("Couldn't find any foods in that. Try rephrasing.");
+  return items;
+}
+
+/** Parses a plain-English meal description into food items using the user's own key.
+ *  If the chosen model is busy (503), rate limited or missing, it retries once and then tries other Gemini models,
+ *  so a spike on one model does not stop you logging. A wrong or blocked key stops straight away. */
 export async function parseWithGemini(text: string, key = getGeminiKey(), model = getGeminiModel()): Promise<ParsedItem[]> {
   if (!key) throw new Error("Add your Gemini API key in AI Food Parsing settings first.");
+  const chain = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
+  let firstError: Error | null = null;
   try {
-    let res = await request(key, model, text, true);
-    if (res.status === 400) {
-      const retry = await request(key, model, text, false); // some models reject a response schema
-      if (retry.ok) res = retry;
-      else return Promise.reject(await failure(res, model));
+    for (const m of chain) {
+      for (let attempt = 0; attempt < (m === model ? 2 : 1); attempt++) {
+        let res = await request(key, m, text, true);
+        if (res.status === 400) {
+          const retry = await request(key, m, text, false); // some models reject a response schema
+          if (retry.ok) res = retry;
+        }
+        if (res.ok) return readReply((await res.json()) as Parameters<typeof readReply>[0]);
+        const err = await failure(res, m);
+        if (res.status === 400 || res.status === 401 || res.status === 403) throw err; // the key or the request itself is wrong
+        firstError ??= err;
+        if (BUSY.has(res.status) && attempt === 0 && m === model) {
+          await sleep(900); // one quick retry on the chosen model
+          continue;
+        }
+        break; // try the next model
+      }
     }
-    if (!res.ok) throw await failure(res, model);
-    const data = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[];
-    };
-    const out = (data.candidates?.[0]?.content?.parts ?? [])
-      .filter((p) => !p.thought)
-      .map((p) => p.text ?? "")
-      .join("");
-    if (!out) throw new Error("Gemini returned nothing. Try rephrasing.");
-    const items = normalizeItems(extractJson(out));
-    if (items.length === 0) throw new Error("Couldn't find any foods in that. Try rephrasing.");
-    return items;
+    throw firstError ?? new Error("Gemini didn't answer. Try again.");
   } catch (e) {
     if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError"))
       throw new Error("Gemini took too long. Try again.");

@@ -10,9 +10,8 @@ import Icon from "@/components/Icon";
 import { ItemEditor, Toggle, draftValid, fromDraft, nutritionOf, toDraft, type Draft } from "@/components/ui";
 import { defaultMeal, emptyDraft, fromKey, kcal, todayKey, uid } from "@/lib/nutrition";
 import { lookupBarcode } from "@/lib/openfoodfacts";
-import { isModelDownloaded, parseOnDevice, webgpuAvailable } from "@/lib/ondevice";
-import { parseWithChrome } from "@/lib/chromeai";
-import { getGeminiKey, parseWithGemini } from "@/lib/gemini";
+import { effectiveMode, parseText } from "@/lib/parse";
+import { getGeminiKey } from "@/lib/gemini";
 import type { ParsedItem } from "@/lib/describe";
 import type { Entry, FoodDraft, Preset, Source } from "@/lib/types";
 
@@ -171,17 +170,7 @@ export default function AddPage() {
     setParsing(true);
     setParseError(null);
     try {
-      let parsed: ParsedItem[];
-      if (app.profile?.aiMode === "chrome") {
-        parsed = await parseWithChrome(text.trim());
-      } else if (app.profile?.aiMode === "device") {
-        if (!webgpuAvailable()) throw new Error("This browser doesn't support WebGPU. Switch to Gemini in AI Food Parsing settings.");
-        if (!(await isModelDownloaded())) throw new Error("The on-device model isn't downloaded yet. Download it in AI Food Parsing settings.");
-        parsed = await parseOnDevice(text.trim());
-      } else {
-        if (!getGeminiKey()) throw new Error("Add your own Gemini API key first — it's free from Google AI Studio.");
-        parsed = await parseWithGemini(text.trim());
-      }
+      const parsed: ParsedItem[] = await parseText(effectiveMode(app.profile?.aiMode ?? "chrome"), text.trim());
       setItems(parsed.map(parsedToDraft));
     } catch (e) {
       setParseError(e instanceof Error ? e.message : "Couldn't parse that. Try again.");
@@ -321,7 +310,7 @@ export default function AddPage() {
   }
 
   if (view === "describe") {
-    const aiMode = app.profile.aiMode;
+    const aiMode = effectiveMode(app.profile.aiMode);
     const deviceMode = aiMode === "device" || aiMode === "chrome";
     return (
       <Shell nav={false} narrow>

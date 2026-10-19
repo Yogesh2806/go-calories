@@ -26,7 +26,7 @@ import {
 } from "@/lib/nutrition";
 import { dismissReminder, dueReminder, loadReminders } from "@/lib/reminders";
 import { inlineText, splitMeals } from "@/lib/note";
-import { aiLabel, parseText } from "@/lib/parse";
+import { aiLabel, effectiveMode, parseText } from "@/lib/parse";
 import { nutritionOf, scaled, servingOf, type Row } from "@/lib/noterows";
 import type { ParsedItem } from "@/lib/describe";
 import { MEAL_LABEL, type Entry, type Meal, type Preset, type Profile } from "@/lib/types";
@@ -40,9 +40,10 @@ export default function Journal({ date, profile, banner }: { date: string; profi
   const isToday = date === today;
   const paper = profile.style === "paper";
   const goals = goalsFor(profile);
-  const aiMode = profile.aiMode;
+  const aiMode = effectiveMode(profile.aiMode);
 
   const [text, setText] = useState("");
+  const [draftReady, setDraftReady] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +85,36 @@ export default function Journal({ date, profile, banner }: { date: string; profi
   useEffect(() => {
     if (isToday) area.current?.focus({ preventScroll: true });
   }, [isToday]);
+
+  // Keep what is being typed on this device, so a reload (the browser reclaiming memory, a crash) never loses it.
+  const draftKey = `gc:draft:${date}`;
+  useEffect(() => {
+    setDraftReady(false);
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(draftKey);
+    } catch {
+      /* ignore */
+    }
+    setText(saved ?? "");
+    setDraftReady(true);
+  }, [draftKey]);
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      if (text.trim()) localStorage.setItem(draftKey, text);
+      else localStorage.removeItem(draftKey);
+    } catch {
+      /* ignore */
+    }
+  }, [text, draftReady, draftKey]);
+  // Size the box to fit a restored draft.
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
 
   /* ---------- reading the note ---------- */
 

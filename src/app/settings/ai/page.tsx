@@ -9,6 +9,9 @@ import {
   ON_DEVICE_LABEL,
   ON_DEVICE_SIZE_NOTE,
   deleteModel,
+  deviceCrashed,
+  isIOS,
+  resetDeviceGuard,
   isModelDownloaded,
   loadModel,
   webgpuAvailable,
@@ -31,6 +34,7 @@ import {
 } from "@/lib/chromeai";
 import { getFallback, getLastCheck, setFallback, aiLabel, type LastCheck } from "@/lib/parse";
 import { Toggle } from "@/components/ui";
+import { isPhoneOrTablet } from "@/lib/device";
 import type { AiMode } from "@/lib/types";
 
 export default function AiSettings() {
@@ -56,10 +60,16 @@ export default function AiSettings() {
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Fall back to the next engine when the chosen one can't run
+  const [crashed, setCrashed] = useState(false);
+  const [ios, setIos] = useState(false);
+  const [phone, setPhone] = useState(false);
   const [fallback, setFallbackState] = useState(true);
   const [last, setLast] = useState<LastCheck | null>(null);
 
   useEffect(() => {
+    setCrashed(deviceCrashed());
+    setIos(isIOS());
+    setPhone(isPhoneOrTablet());
     setFallbackState(getFallback());
     setLast(getLastCheck());
     setSavedKey(getGeminiKey());
@@ -192,11 +202,19 @@ export default function AiSettings() {
   return (
     <Shell nav={false} narrow>
       <BackHeader title="AI Food Parsing" onBack={() => (window.history.length > 1 ? router.back() : router.push("/profile"))} />
+      {phone && (
+        <p className="muted" style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+          On phones and tablets the app uses Gemini with your own key. Chrome&apos;s built-in AI and the on-device model need a lot of memory,
+          so they are only offered on a computer.
+        </p>
+      )}
       <p className="muted" style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
         When you write &ldquo;2 rotis and a bowl of dal&rdquo; in your note, an AI turns it into calories and macros. Choose where that
         thinking happens.
       </p>
 
+      {!phone && (
+      <>
       <div role="radiogroup" aria-label="AI mode" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {option("chrome", "sparkles", "Chrome built-in AI", "The default. Free, private and works offline. Gemini Nano runs inside desktop Chrome, no key needed.", pickChrome)}
         {option("device", "cpu", "On-device model", "Private and works offline after a one-time download. Slower and less accurate.")}
@@ -280,6 +298,8 @@ export default function AiSettings() {
           double-check unusual dishes. On a phone, Chrome&apos;s built-in AI isn&apos;t available, so Gemini or the on-device model is used instead.
         </p>
       </section>
+      </>
+      )}
 
       <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="label">Gemini API key</div>
@@ -338,7 +358,8 @@ export default function AiSettings() {
           Anyone using this browser profile could see it, so use a key you can revoke.
         </p>
       </section>
-
+      {!phone && (
+      <>
       <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="label">On-device model</div>
         <div>
@@ -346,6 +367,30 @@ export default function AiSettings() {
           <div className="muted" style={{ fontSize: 12.5, marginTop: 3, lineHeight: 1.5 }}>{ON_DEVICE_SIZE_NOTE}.</div>
         </div>
 
+        {crashed && (
+          <div role="alert" style={{ fontSize: 13, lineHeight: 1.5, color: "var(--danger)" }}>
+            Last time this model ran, the page reloaded, which usually means the phone ran out of memory. On-device parsing is switched off.
+            Gemini works well on phones.
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="chip"
+                onClick={() => {
+                  resetDeviceGuard();
+                  setCrashed(false);
+                }}
+              >
+                Try it again anyway
+              </button>
+            </div>
+          </div>
+        )}
+        {ios && !crashed && (
+          <div className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+            iPhones and iPads limit how much memory a browser tab can use, and this model often goes over it. If the page reloads while you log food,
+            use Gemini instead.
+          </div>
+        )}
         {gpu === false && (
           <div className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
             This browser doesn&apos;t support WebGPU, so the on-device model can&apos;t run here. It works in recent desktop Chrome/Edge,
@@ -388,6 +433,24 @@ export default function AiSettings() {
           Use Wi-Fi — the file is large. On iPhone, a model this size may not fit in browser memory; if it fails, stay on Gemini.
         </p>
       </section>
+      </>
+      )}
+      {phone && downloaded && (
+        <section className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="label">Free up space</div>
+          <div className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+            An on-device AI model ({ON_DEVICE_LABEL}) is still stored in this browser. Phones now use Gemini only, so you can remove it.
+          </div>
+          <button type="button" className="chip" style={{ alignSelf: "flex-start" }} onClick={remove}>
+            Delete download
+          </button>
+          {error && (
+            <div role="alert" style={{ fontSize: 13, color: "var(--danger)" }}>
+              {error}
+            </div>
+          )}
+        </section>
+      )}
     </Shell>
   );
 }

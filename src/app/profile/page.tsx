@@ -10,6 +10,7 @@ import Icon from "@/components/Icon";
 import { Field, NumInput, Sheet, Toggle } from "@/components/ui";
 import { ACCENT_COLORS, ACCENT_LABEL, resolveDark } from "@/lib/theme";
 import { ACCENT_KEYS, STYLE_LABEL, type Profile, type Sex, type UiStyle } from "@/lib/types";
+import { effectiveMode } from "@/lib/parse";
 import { formatHeight, formatWeight, goalLabel, goalsFor, num } from "@/lib/nutrition";
 
 type Editing = null | "body";
@@ -206,7 +207,7 @@ export default function ProfilePage() {
               AI Food Parsing
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--ink-2)" }}>
-              {p.aiMode === "chrome" ? "Chrome AI" : p.aiMode === "device" ? "On-device" : "Gemini"} <Icon name="chevR" size={14} />
+              {(() => { const m = effectiveMode(p.aiMode); return m === "chrome" ? "Chrome AI" : m === "device" ? "On-device" : "Gemini"; })()} <Icon name="chevR" size={14} />
             </span>
           </Link>
           <button
