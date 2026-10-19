@@ -5,282 +5,205 @@ import { useMemo, useState } from "react";
 import { useApp, useGuard } from "@/lib/app";
 import Shell, { Splash } from "@/components/Shell";
 import Icon from "@/components/Icon";
-import { addDays, byDay, fromKey, kcal, sum, toKey, todayKey } from "@/lib/nutrition";
-
-type Range = "week" | "month" | "year";
-type Filter = "all" | "onTrack" | "over" | "none";
+import { addDays, byDay, fromKey, goalsFor, kcal, streakInfo, sum, toKey, todayKey } from "@/lib/nutrition";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3));
-
-interface Cell {
-  key: string;
-  day: number;
-  inMonth: boolean;
-  future: boolean;
-  calories: number | null;
-  fraction: number;
-}
+const ON_TARGET = (cals: number, goal: number) => cals / goal >= 0.8 && cals / goal <= 1.05;
 
 export default function CalendarPage() {
   const ok = useGuard();
   const app = useApp();
   const today = todayKey();
-  const [range, setRange] = useState<Range>("month");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [anchor, setAnchor] = useState<string>(today);
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
   const [selected, setSelected] = useState<string>(today);
 
-  const days = useMemo(() => {
-    const m = new Map<string, number>();
-    byDay(app.entries).forEach((es, k) => m.set(k, sum(es).calories));
-    return m;
+  const { days, streak } = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof sum>>();
+    byDay(app.entries).forEach((es, k) => m.set(k, sum(es)));
+    return { days: m, streak: streakInfo(app.entries) };
   }, [app.entries]);
 
   if (!ok || !app.profile) return <Splash />;
-  const goal = app.profile.calorieGoal;
+  const goals = goalsFor(app.profile);
+  const goal = goals.calories;
 
-  const cell = (d: Date, inMonth: boolean): Cell => {
-    const key = toKey(d);
-    const future = key > today;
-    const cals = future ? null : (days.get(key) ?? null);
-    return {
-      key,
-      day: d.getDate(),
-      inMonth,
-      future,
-      calories: cals,
-      fraction: cals == null ? 0 : Math.min(cals / goal, 1),
-    };
-  };
-  const monthCells = (a: Date): Cell[] => {
-    const y = a.getFullYear();
-    const mo = a.getMonth();
-    const first = new Date(y, mo, 1);
-    const count = new Date(y, mo + 1, 0).getDate();
-    const out: Cell[] = [];
-    for (let i = first.getDay(); i > 0; i--) out.push(cell(addDays(first, -i), false));
-    for (let d = 1; d <= count; d++) out.push(cell(new Date(y, mo, d), true));
-    while (out.length % 7) out.push(cell(addDays(fromKey(out[out.length - 1].key), 1), false));
-    return out;
-  };
-  const weekCells = (a: Date): Cell[] => {
-    const sun = addDays(a, -a.getDay());
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = addDays(sun, i);
-      return cell(d, d.getMonth() === a.getMonth());
-    });
-  };
-  const stats = (cells: Cell[]) => {
-    const inM = cells.filter((c) => c.inMonth);
-    const logged = inM.filter((c) => c.calories != null && c.calories > 0);
-    const avg = logged.length ? Math.round(logged.reduce((s, c) => s + (c.calories ?? 0), 0) / logged.length) : 0;
-    const good = (c: Cell) => c.calories != null && c.calories > 0 && c.calories / goal >= 0.8 && c.calories / goal <= 1.05;
-    let best = 0;
-    let cur = 0;
-    for (const c of inM) {
-      if (good(c)) {
-        cur++;
-        best = Math.max(best, cur);
-      } else cur = 0;
-    }
-    return { avg, onTrack: inM.filter(good).length, logged: logged.length, best };
-  };
+  // Monday-first month grid
+  const y = month.getFullYear();
+  const mo = month.getMonth();
+  const count = new Date(y, mo + 1, 0).getDate();
+  const lead = (month.getDay() + 6) % 7;
+  const cells: (string | null)[] = [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: count }, (_, i) => toKey(new Date(y, mo, i + 1))),
+  ];
+  while (cells.length % 7) cells.push(null);
 
-  const a = fromKey(anchor);
-  const cells = range === "week" ? weekCells(a) : monthCells(a);
-  const monthStats = stats(monthCells(a));
+  // "so far": from the first logged day of the month (or the 1st) up to yesterday; today only once it is on target
+  const monthKeys = cells.filter((c): c is string => !!c);
+  const loggedKeys = monthKeys.filter((k) => (days.get(k)?.calories ?? 0) > 0 && k <= today);
+  const firstLogged = loggedKeys[0];
+  const span = firstLogged ? monthKeys.filter((k) => k >= firstLogged && k < today) : [];
+  const onTargetDays = span.filter((k) => ON_TARGET(days.get(k)?.calories ?? 0, goal)).length;
+  const avg = loggedKeys.length ? Math.round(loggedKeys.reduce((s, k) => s + (days.get(k)?.calories ?? 0), 0) / loggedKeys.length) : 0;
+  const avgP = loggedKeys.length ? Math.round(loggedKeys.reduce((s, k) => s + (days.get(k)?.protein ?? 0), 0) / loggedKeys.length) : 0;
 
-  const matches = (c: Cell) => {
-    const has = c.calories != null && c.calories > 0;
-    if (filter === "onTrack") return has && (c.calories as number) / goal >= 0.8 && (c.calories as number) / goal <= 1.05;
-    if (filter === "over") return has && (c.calories as number) > goal;
-    if (filter === "none") return !has && !c.future;
-    return true;
-  };
-
-  const step = (n: number) => {
-    if (range === "week") setAnchor(toKey(addDays(a, 7 * n)));
-    else if (range === "year") setAnchor(toKey(new Date(a.getFullYear() + n, a.getMonth(), 1)));
-    else setAnchor(toKey(new Date(a.getFullYear(), a.getMonth() + n, 1)));
-  };
-
-  let title: string;
-  if (range === "year") title = String(a.getFullYear());
-  else if (range === "week") {
-    const sun = addDays(a, -a.getDay());
-    const sat = addDays(sun, 6);
-    title = `${MONTHS_SHORT[sun.getMonth()]} ${sun.getDate()} – ${MONTHS_SHORT[sat.getMonth()]} ${sat.getDate()}, ${sat.getFullYear()}`;
-  } else title = `${MONTHS[a.getMonth()]} ${a.getFullYear()}`;
-
-  const selCals = days.get(selected) ?? 0;
-  const selFrac = Math.min(100, Math.round((selCals / goal) * 100));
-  const selLabel = fromKey(selected).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
-
-  const yearTiles = Array.from({ length: 12 }, (_, m) => {
-    const st = stats(monthCells(new Date(a.getFullYear(), m, 1)));
-    return {
-      m,
-      avg: st.avg,
-      current: m === new Date().getMonth() && a.getFullYear() === new Date().getFullYear(),
-    };
-  });
+  const sel = days.get(selected);
+  const selEntries = app.entries.filter((e) => e.logDate === selected);
+  const selMeals = new Set(selEntries.map((e) => e.meal)).size;
+  const sd = fromKey(selected);
+  const selLabel = `${sd.toLocaleDateString("en-US", { weekday: "short" })} ${sd.getDate()} ${sd.toLocaleDateString("en-US", { month: "short" })}`.toUpperCase();
+  const canNext = new Date(y, mo + 1, 1) <= addDays(fromKey(today), 31);
 
   return (
     <Shell>
-      <h1 className="h1">Calendar</h1>
+      <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <h1 className="h1">Calendar</h1>
+          <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>Tap a day to open its note</div>
+        </div>
+        <Link href="/streaks" className="streak-chip" aria-label={`${streak.current}-day streak`} style={{ marginTop: 4 }}>
+          <Icon name="flame" size={16} stroke={2} />
+          <span>{streak.current > 0 ? `${streak.current}-day streak` : "Start a streak"}</span>
+        </Link>
+      </header>
+
       <div className="cols">
         <div className="stack">
-          <div className="seg" role="tablist" aria-label="Range">
-            {(["week", "month", "year"] as Range[]).map((r) => (
-              <button key={r} type="button" role="tab" aria-selected={range === r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>
-                {r[0].toUpperCase() + r.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div className="scroll-x">
-            {(
-              [
-                ["all", "All days"],
-                ["onTrack", "On track"],
-                ["over", "Over goal"],
-                ["none", "No log"],
-              ] as [Filter, string][]
-            ).map(([f, label]) => (
-              <button key={f} type="button" className={`chip${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="card" style={{ padding: 20 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "36px 1fr 36px", alignItems: "center" }}>
-              <button type="button" className="iconbtn" aria-label="Previous" onClick={() => step(-1)}>
+          <div className="card" style={{ padding: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 40px", alignItems: "center" }}>
+              <button type="button" className="iconbtn" style={{ width: 40, height: 40 }} aria-label="Previous month" onClick={() => setMonth(new Date(y, mo - 1, 1))}>
                 <Icon name="chevL" size={18} />
               </button>
-              <div style={{ textAlign: "center", fontSize: 15, fontWeight: 600 }}>{title}</div>
-              <button type="button" className="iconbtn" aria-label="Next" onClick={() => step(1)}>
+              <div style={{ textAlign: "center", fontSize: 16, fontWeight: 700 }}>{MONTHS[mo]} {y}</div>
+              <button type="button" className="iconbtn" style={{ width: 40, height: 40 }} aria-label="Next month" disabled={!canNext} onClick={() => setMonth(new Date(y, mo + 1, 1))}>
                 <Icon name="chevR" size={18} />
               </button>
             </div>
-
-            {range === "year" ? (
-              <div className="grid3" style={{ marginTop: 18 }}>
-                {yearTiles.map((t) => (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginTop: 16 }}>
+              {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                <span key={i} className="muted" style={{ textAlign: "center", fontSize: 11.5, fontWeight: 600 }}>
+                  {d}
+                </span>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", rowGap: 6, marginTop: 8 }}>
+              {cells.map((k, i) => {
+                if (!k) return <span key={`b${i}`} />;
+                const future = k > today;
+                const cals = days.get(k)?.calories ?? 0;
+                const logged = cals > 0 && !future;
+                const good = logged && ON_TARGET(cals, goal);
+                const isSel = k === selected;
+                const isToday = k === today;
+                return (
                   <button
-                    key={t.m}
+                    key={k}
                     type="button"
-                    onClick={() => {
-                      setAnchor(toKey(new Date(a.getFullYear(), t.m, 1)));
-                      setRange("month");
-                    }}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 4,
-                      padding: "14px 0",
-                      borderRadius: 18,
-                      background: t.current ? "var(--accent)" : "var(--fill-2)",
-                      color: t.current ? "var(--accent-on)" : "var(--ink)",
-                    }}
+                    aria-label={`${fromKey(k).toLocaleDateString("en-US", { month: "long", day: "numeric" })}${logged ? `, ${kcal(cals)} calories` : ""}`}
+                    aria-pressed={isSel}
+                    onClick={() => setSelected(k)}
+                    style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0" }}
                   >
-                    <span style={{ fontSize: 13, fontWeight: t.current ? 700 : 600 }}>{MONTHS_SHORT[t.m]}</span>
-                    <span style={{ fontSize: 10, opacity: t.current ? 0.9 : 0.6 }}>{t.avg > 0 ? `${kcal(t.avg)} kcal` : "—"}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginTop: 18 }}>
-                  {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-                    <span key={i} className="muted" style={{ textAlign: "center", fontSize: 11.5, fontWeight: 600 }}>
-                      {d}
+                    <span
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 14.5,
+                        fontWeight: isSel || isToday ? 700 : 500,
+                        background: isSel ? "var(--ink)" : "transparent",
+                        color: isSel ? "var(--ink-contrast)" : future ? "var(--ink-3)" : "var(--ink)",
+                        boxShadow: isToday && !isSel ? "inset 0 0 0 1.5px var(--accent)" : "none",
+                        opacity: future ? 0.6 : 1,
+                      }}
+                    >
+                      {fromKey(k).getDate()}
                     </span>
-                  ))}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", rowGap: 14, marginTop: 14 }}>
-                  {cells.map((c) => {
-                    const isToday = c.key === today;
-                    const isSel = c.key === selected;
-                    const base = !c.inMonth ? (c.calories == null ? 0.3 : 0.5) : 1;
-                    return (
-                      <button
-                        key={c.key}
-                        type="button"
-                        aria-label={c.key}
-                        aria-pressed={isSel}
-                        onClick={() => setSelected(c.key)}
-                        style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, opacity: base * (matches(c) ? 1 : 0.32) }}
-                      >
-                        <span
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: 14,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 13.5,
-                            fontWeight: isToday ? 700 : 400,
-                            background: isToday ? "var(--accent)" : isSel ? "var(--fill-1)" : "transparent",
-                            color: isToday ? "var(--accent-on)" : c.inMonth ? "var(--ink)" : "var(--ink-3)",
-                            boxShadow: isSel ? "inset 0 0 0 1.5px var(--accent)" : "none",
-                          }}
-                        >
-                          {c.day}
-                        </span>
-                        <span style={{ display: "block", width: 20, height: 3, borderRadius: 2, background: c.calories == null ? "transparent" : "var(--track)", overflow: "hidden" }}>
-                          <span style={{ display: "block", height: "100%", width: `${Math.round(c.fraction * 100)}%`, background: "var(--accent)" }} />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: 3,
+                        background: good ? "var(--ok)" : logged ? "var(--ink-3)" : "transparent",
+                        opacity: logged && !good ? 0.55 : 1,
+                      }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="muted" style={{ display: "flex", justifyContent: "center", gap: 18, marginTop: 12, fontSize: 12 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i style={{ width: 6, height: 6, borderRadius: 3, background: "var(--ok)" }} /> On target
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i style={{ width: 6, height: 6, borderRadius: 3, background: "var(--ink-3)", opacity: 0.55 }} /> Logged
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <i style={{ width: 6, height: 6, borderRadius: 3, border: "1px solid var(--ink-3)" }} /> Nothing
+              </span>
+            </div>
           </div>
         </div>
 
         <div className="stack">
-          <Link href={`/day/${selected}`} className="card" style={{ display: "block" }} aria-label="Open selected day breakdown">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <div className="label">Selected day</div>
-                <div style={{ fontSize: 16, fontWeight: 700, marginTop: 3 }}>{selLabel}</div>
+          <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="label">
+                {selLabel}
+                {selected === today ? " · TODAY" : ""}
               </div>
-              <Icon name="chevR" size={16} style={{ color: "var(--ink-3)" }} />
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 6 }}>
+                <span className="display" style={{ fontSize: 30, fontWeight: 500, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {kcal(sel?.calories ?? 0)}
+                </span>
+                <span style={{ fontSize: 13.5, color: "var(--ink-2)" }}>of {kcal(goal)} kcal</span>
+              </div>
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+                {selEntries.length === 0
+                  ? "Nothing written yet"
+                  : `P ${Math.round(sel?.protein ?? 0)} g · C ${Math.round(sel?.carbs ?? 0)} g · F ${Math.round(sel?.fat ?? 0)} g · ${selMeals} meal${selMeals === 1 ? "" : "s"}`}
+              </div>
             </div>
-            <div style={{ marginTop: 16 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <span style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>{kcal(selCals)}</span>
-                <span style={{ fontSize: 14, color: "var(--ink-2)" }}>/ {kcal(goal)} kcal</span>
-              </div>
-              <div className="bar" style={{ marginTop: 10 }}>
-                <i style={{ width: `${selFrac}%` }} />
-              </div>
-            </div>
-          </Link>
+            <Link
+              href={selected === today ? "/" : `/day/${selected}`}
+              className="btn"
+              style={{ width: "auto", minHeight: 42, padding: "0 16px", fontSize: 14, whiteSpace: "nowrap", flexShrink: 0 }}
+            >
+              Open note
+              <Icon name="chevR" size={14} stroke={2.2} />
+            </Link>
+          </div>
 
-          <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div className="label">{MONTHS[a.getMonth()]}</div>
-            <div className="grid3">
-              <div className="card sm">
-                <div className="muted" style={{ fontSize: 10.5 }}>AVG / DAY</div>
-                <div style={{ fontSize: 14.5, fontWeight: 700, marginTop: 6 }}>{kcal(monthStats.avg)} kcal</div>
-              </div>
-              <div className="card sm">
-                <div className="muted" style={{ fontSize: 10.5 }}>ON TRACK</div>
-                <div style={{ fontSize: 14.5, fontWeight: 700, marginTop: 6 }}>
-                  {monthStats.onTrack} / {monthStats.logged} days
+          <div className="card">
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <span className="label">{MONTHS[mo]} so far</span>
+              <span className="muted" style={{ fontSize: 12 }}>goal {kcal(goal)} kcal</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
+              <div>
+                <div className="display" style={{ fontSize: 28, fontWeight: 500, lineHeight: 1.1 }}>
+                  {onTargetDays}/{span.length}
                 </div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>days on target</div>
               </div>
-              <div className="card sm">
-                <div className="muted" style={{ fontSize: 10.5 }}>BEST STREAK</div>
-                <div style={{ fontSize: 14.5, fontWeight: 700, marginTop: 6 }}>{monthStats.best} days</div>
+              <div>
+                <div className="display" style={{ fontSize: 28, fontWeight: 500, lineHeight: 1.1 }}>{kcal(avg)}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>kcal a day</div>
+              </div>
+              <div>
+                <div className="display" style={{ fontSize: 28, fontWeight: 500, lineHeight: 1.1 }}>{avgP}</div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>g protein</div>
               </div>
             </div>
-          </section>
+          </div>
         </div>
       </div>
     </Shell>

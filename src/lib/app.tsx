@@ -15,7 +15,7 @@ import type { Session } from "@supabase/supabase-js";
 import { getSupabase, supabaseConfigured } from "./supabase";
 import { localRepo, supabaseRepo, type Repo } from "./repo";
 import type { Entry, Preset, Profile, UiStyle } from "./types";
-import { DEFAULT_SPLIT, dailyCalorieGoal } from "./nutrition";
+import { DEFAULT_FAT_PCT, PROTEIN_PER_KG, makePlan } from "./nutrition";
 import { ACCENT_COLORS, applyAccent, applyStyle, resolveDark } from "./theme";
 
 export interface AppUser {
@@ -83,18 +83,19 @@ export function useGuard(requireOnboarded = true): boolean {
 }
 
 function defaultProfile(user: AppUser): Profile {
-  const base = { heightCm: 170, weightKg: 70, age: 28, activity: "light" as const, goal: "maintain" as const };
+  const base = { sex: null, heightCm: 170, weightKg: 70, age: 28, activity: "light" as const, goal: "maintain" as const, targetWeightKg: 70 };
   return {
     name: user.name,
     ...base,
-    targetWeightKg: 70,
-    calorieGoal: dailyCalorieGoal(base),
-    split: DEFAULT_SPLIT,
+    calorieGoal: makePlan(base).calories,
+    proteinPerKg: PROTEIN_PER_KG.maintain,
+    fatPct: DEFAULT_FAT_PCT,
     units: "metric",
     accent: "graphite",
     theme: "system",
     style: readStoredStyle(),
-    aiMode: "cloud",
+    // Chrome's built-in AI first; Settings → AI food parsing can switch, and it falls back automatically.
+    aiMode: "chrome",
     onboarded: false,
   };
 }
@@ -102,10 +103,21 @@ function defaultProfile(user: AppUser): Profile {
 /** The style chosen on this device (set before login too), so a fresh profile starts out matching it. */
 function readStoredStyle(): UiStyle {
   try {
-    return localStorage.getItem("gc:style") === "paper" ? "paper" : "glass";
+    return localStorage.getItem("gc:style") === "glass" ? "glass" : "paper";
   } catch {
-    return "glass";
+    return "paper";
   }
+}
+
+/** Fills in anything an older saved profile (this device or the server) doesn't have yet. */
+function normalizeProfile(p: Profile): Profile {
+  return {
+    ...p,
+    sex: p.sex === "male" || p.sex === "female" ? p.sex : null,
+    proteinPerKg: p.proteinPerKg > 0 ? p.proteinPerKg : PROTEIN_PER_KG[p.goal] ?? 1.6,
+    fatPct: p.fatPct > 0 ? p.fatPct : DEFAULT_FAT_PCT,
+    style: p.style === "glass" ? "glass" : "paper",
+  };
 }
 
 function userFromSession(s: Session): AppUser {
@@ -205,7 +217,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .load()
       .then((snap) => {
         if (cancelled) return;
-        setProfile(snap.profile ? { ...snap.profile, style: snap.profile.style === "paper" ? "paper" : "glass" } : defaultProfile(user));
+        setProfile(snap.profile ? normalizeProfile(snap.profile) : defaultProfile(user));
         setEntries(snap.entries);
         setPresets(snap.presets);
         setReady(true);
@@ -248,7 +260,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       document.documentElement.classList.toggle("dark", dark);
       document
         .querySelectorAll('meta[name="theme-color"]')
-        .forEach((m) => m.setAttribute("content", uiStyle === "paper" ? "#F6F1E7" : dark ? "#18191B" : "#FBFBFA"));
+        .forEach((m) => m.setAttribute("content", uiStyle === "paper" ? "#F3F0EA" : dark ? "#18191B" : "#FBFBFA"));
     };
     apply();
     if (themePref === "system") {

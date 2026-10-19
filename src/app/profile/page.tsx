@@ -9,10 +9,10 @@ import InstallHint from "@/components/InstallHint";
 import Icon from "@/components/Icon";
 import { Field, NumInput, Sheet, Toggle } from "@/components/ui";
 import { ACCENT_COLORS, ACCENT_LABEL, resolveDark } from "@/lib/theme";
-import { ACCENT_KEYS, STYLE_LABEL, type Profile, type UiStyle } from "@/lib/types";
-import { formatHeight, formatWeight, goalLabel, num } from "@/lib/nutrition";
+import { ACCENT_KEYS, STYLE_LABEL, type Profile, type Sex, type UiStyle } from "@/lib/types";
+import { formatHeight, formatWeight, goalLabel, goalsFor, num } from "@/lib/nutrition";
 
-type Editing = null | "body" | "calories" | "split";
+type Editing = null | "body";
 
 export default function ProfilePage() {
   const ok = useGuard();
@@ -24,7 +24,7 @@ export default function ProfilePage() {
   const p = app.profile;
   const paper = p.style === "paper";
   const dark = typeof window !== "undefined" && resolveDark(p.theme, p.style);
-  const split = `${p.split.protein} / ${p.split.carbs} / ${p.split.fat}`;
+  const g = goalsFor(p);
   const goalLine =
     p.goal === "maintain"
       ? "Goal · Maintain weight"
@@ -65,7 +65,7 @@ export default function ProfilePage() {
         {[
           { icon: "ruler" as const, label: "Height", v: formatHeight(p.heightCm, p.units) },
           { icon: "scale" as const, label: "Weight", v: formatWeight(p.weightKg, p.units) },
-          { icon: "user" as const, label: "Age", v: `${p.age} yrs` },
+          { icon: "user" as const, label: "Age · Sex", v: `${p.age} yrs${p.sex ? ` · ${p.sex === "male" ? "Male" : "Female"}` : ""}` },
           { icon: "target" as const, label: "Goal weight", v: formatWeight(p.targetWeightKg, p.units) },
         ].map((s) => (
           <div key={s.label} className="card sm" style={{ borderRadius: 20, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -77,22 +77,24 @@ export default function ProfilePage() {
       </div>
 
       <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="label">Your goals</div>
+        <div className="label">Your targets</div>
         <div className="card list">
-          <button type="button" className="row" onClick={() => setEditing("calories")}>
-            <span>Daily Calorie Goal</span>
+          <Link href="/targets" className="row">
+            <span>Daily targets</span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--ink-2)" }}>
               {p.calorieGoal.toLocaleString()} kcal <Icon name="chevR" size={14} />
             </span>
-          </button>
-          <button type="button" className="row" onClick={() => setEditing("split")}>
-            <span>Macro Split</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--ink-2)" }}>
-              {split} <Icon name="chevR" size={14} />
+          </Link>
+          <div className="row" style={{ fontSize: 13.5, color: "var(--ink-2)" }}>
+            <span>Protein · Carbs · Fat</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
+              {g.protein} · {g.carbs} · {g.fat} g
             </span>
-          </button>
+          </div>
         </div>
-        <p className="muted" style={{ margin: 0, fontSize: 12 }}>Macro split is Protein / Carbs / Fat, in percent of calories.</p>
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          Protein is {p.proteinPerKg} g per kg of body weight, fat is {p.fatPct}% of calories, and carbs fill the rest.
+        </p>
       </section>
 
       <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -242,8 +244,6 @@ export default function ProfilePage() {
       </section>
 
       <BodySheet open={editing === "body"} profile={p} onClose={() => setEditing(null)} onSave={(patch) => app.saveProfile(patch)} />
-      <CalorieSheet open={editing === "calories"} profile={p} onClose={() => setEditing(null)} onSave={(patch) => app.saveProfile(patch)} />
-      <SplitSheet open={editing === "split"} profile={p} onClose={() => setEditing(null)} onSave={(patch) => app.saveProfile(patch)} />
     </Shell>
   );
 }
@@ -269,11 +269,21 @@ function BodyForm({ profile, onClose, onSave }: Omit<SheetProps, "open">) {
   const [w, setW] = useState(String(profile.weightKg));
   const [a, setA] = useState(String(profile.age));
   const [t, setT] = useState(String(profile.targetWeightKg));
+  const [sex, setSex] = useState<Sex | null>(profile.sex);
   const valid = num(h) >= 100 && num(w) >= 25 && num(a) >= 10 && num(t) >= 25;
   return (
     <>
       <Field label="NAME">
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="SEX (USED IN THE CALORIE FORMULA)">
+        <div className="seg" role="radiogroup" aria-label="Sex">
+          {(["male", "female"] as Sex[]).map((x) => (
+            <button key={x} type="button" role="radio" aria-checked={sex === x} className={sex === x ? "on" : ""} onClick={() => setSex(x)}>
+              {x === "male" ? "Male" : "Female"}
+            </button>
+          ))}
+        </div>
       </Field>
       <div className="grid2">
         <Field label="HEIGHT (CM)">
@@ -294,83 +304,7 @@ function BodyForm({ profile, onClose, onSave }: Omit<SheetProps, "open">) {
         className="btn"
         disabled={!valid}
         onClick={async () => {
-          await onSave({ name: name.trim(), heightCm: num(h), weightKg: num(w), age: Math.round(num(a)), targetWeightKg: num(t) });
-          onClose();
-        }}
-      >
-        Save
-      </button>
-    </>
-  );
-}
-
-function CalorieSheet({ open, profile, onClose, onSave }: SheetProps) {
-  return (
-    <Sheet open={open} title="Daily calorie goal" onClose={onClose}>
-      <CalorieForm profile={profile} onClose={onClose} onSave={onSave} />
-    </Sheet>
-  );
-}
-function CalorieForm({ profile, onClose, onSave }: Omit<SheetProps, "open">) {
-  const [v, setV] = useState(String(profile.calorieGoal));
-  const n = num(v);
-  return (
-    <>
-      <Field label="KCAL PER DAY">
-        <NumInput value={v} onChange={setV} step="10" />
-      </Field>
-      <button
-        type="button"
-        className="btn"
-        disabled={n < 800 || n > 8000}
-        onClick={async () => {
-          await onSave({ calorieGoal: Math.round(n) });
-          onClose();
-        }}
-      >
-        Save
-      </button>
-    </>
-  );
-}
-
-function SplitSheet({ open, profile, onClose, onSave }: SheetProps) {
-  return (
-    <Sheet open={open} title="Macro split" onClose={onClose}>
-      <SplitForm profile={profile} onClose={onClose} onSave={onSave} />
-    </Sheet>
-  );
-}
-function SplitForm({ profile, onClose, onSave }: Omit<SheetProps, "open">) {
-  const [pr, setPr] = useState(String(profile.split.protein));
-  const [ca, setCa] = useState(String(profile.split.carbs));
-  const [fa, setFa] = useState(String(profile.split.fat));
-  const total = num(pr) + num(ca) + num(fa);
-  return (
-    <>
-      <p className="muted" style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5 }}>
-        Share of your daily calories. The three numbers need to add up to 100.
-      </p>
-      <div className="grid3">
-        <Field label="PROTEIN %">
-          <NumInput value={pr} onChange={setPr} step="1" />
-        </Field>
-        <Field label="CARBS %">
-          <NumInput value={ca} onChange={setCa} step="1" />
-        </Field>
-        <Field label="FAT %">
-          <NumInput value={fa} onChange={setFa} step="1" />
-        </Field>
-      </div>
-      <div style={{ fontSize: 13, color: Math.round(total) === 100 ? "var(--ink-2)" : "var(--danger)" }}>
-        Total: {Math.round(total)}%
-      </div>
-      <button
-        type="button"
-        className="btn"
-        disabled={Math.round(total) !== 100}
-        onClick={async () => {
-          await onSave({ split: { protein: Math.round(num(pr)), carbs: Math.round(num(ca)), fat: Math.round(num(fa)) } });
+          await onSave({ name: name.trim(), heightCm: num(h), weightKg: num(w), age: Math.round(num(a)), targetWeightKg: num(t), sex });
           onClose();
         }}
       >

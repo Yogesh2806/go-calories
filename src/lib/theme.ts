@@ -49,7 +49,7 @@ export function resolveDark(pref: "light" | "dark" | "system", style: UiStyle = 
 
 /** Runs before first paint (inlined into <head>) so there is no theme flash. */
 export const THEME_BOOT_SCRIPT = `(function(){try{
-var st=localStorage.getItem('gc:style')==='paper'?'paper':'glass';
+var st=localStorage.getItem('gc:style')==='glass'?'glass':'paper';
 document.documentElement.dataset.style=st;
 var t=localStorage.getItem('gc:theme')||'system';
 var d=st!=='paper'&&(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches));

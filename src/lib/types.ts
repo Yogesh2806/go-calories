@@ -9,6 +9,7 @@ export const MEAL_LABEL: Record<Meal, string> = {
 };
 
 export type Goal = "lose" | "maintain" | "gain";
+export type Sex = "male" | "female";
 export type Activity = "sedentary" | "light" | "moderate" | "active";
 export type Units = "metric" | "imperial";
 export type ThemePref = "light" | "dark" | "system";
@@ -60,12 +61,6 @@ export interface Preset extends Nutrition {
   serving: string;
 }
 
-export interface MacroSplit {
-  protein: number;
-  carbs: number;
-  fat: number;
-}
-
 export interface Profile {
   name: string;
   heightCm: number;
@@ -75,7 +70,12 @@ export interface Profile {
   targetWeightKg: number;
   activity: Activity;
   calorieGoal: number;
-  split: MacroSplit; // percentages, sum to 100
+  /** Used only in the calorie formula. Null on accounts made before we asked. */
+  sex: Sex | null;
+  /** Protein target in grams per kg of body weight. Carbs are whatever calories are left. */
+  proteinPerKg: number;
+  /** Fat target as a percentage of daily calories. */
+  fatPct: number;
   units: Units;
   accent: AccentKey;
   theme: ThemePref;

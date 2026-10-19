@@ -22,7 +22,8 @@ Split the description into separate food items and estimate realistic nutrition 
 
 Rules:
 - One entry per distinct food or drink ("2 rotis and a bowl of dal" -> two entries: rotis, dal).
-- "serving" is a short human description of the portion, e.g. "2 medium (~80 g)" or "1 bowl (~200 g)".
+- "name" is the food only, without the quantity ("mixed oats", not "75g mixed oats").
+- "serving" starts with the quantity exactly as the person wrote it, then optionally an approximate weight: "75 g", "2 medium (~80 g)", "1 bowl (~200 g)".
 - If the user gives a quantity, use it. Otherwise assume one typical serving.
 - calories in kcal; protein, carbs, fat, fiber, sugar in grams; sodium in milligrams. Use plain numbers, never ranges.
 - "meal" is one of: breakfast, lunch, snacks, drinks, dinner — only if the text implies it (e.g. "coffee" is drinks); otherwise omit it.

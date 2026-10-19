@@ -29,6 +29,8 @@ import {
   chromePrepare,
   type ChromeAvailability,
 } from "@/lib/chromeai";
+import { getFallback, getLastCheck, setFallback, aiLabel, type LastCheck } from "@/lib/parse";
+import { Toggle } from "@/components/ui";
 import type { AiMode } from "@/lib/types";
 
 export default function AiSettings() {
@@ -53,7 +55,13 @@ export default function AiSettings() {
   const [testing, setTesting] = useState(false);
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Fall back to the next engine when the chosen one can't run
+  const [fallback, setFallbackState] = useState(true);
+  const [last, setLast] = useState<LastCheck | null>(null);
+
   useEffect(() => {
+    setFallbackState(getFallback());
+    setLast(getLastCheck());
     setSavedKey(getGeminiKey());
     setModel(getGeminiModel());
     setGpu(webgpuAvailable());
@@ -144,7 +152,7 @@ export default function AiSettings() {
     try {
       await deleteModel();
       setDownloaded(false);
-      if (mode === "device") await pick("cloud");
+      if (mode === "device") await pick("chrome");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't remove the model.");
     }
@@ -185,15 +193,39 @@ export default function AiSettings() {
     <Shell nav={false} narrow>
       <BackHeader title="AI Food Parsing" onBack={() => (window.history.length > 1 ? router.back() : router.push("/profile"))} />
       <p className="muted" style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
-        &ldquo;Describe&rdquo; turns plain text like &ldquo;2 rotis and a bowl of dal&rdquo; into calories and macros. Choose where that
+        When you write &ldquo;2 rotis and a bowl of dal&rdquo; in your note, an AI turns it into calories and macros. Choose where that
         thinking happens.
       </p>
 
       <div role="radiogroup" aria-label="AI mode" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {option("cloud", "cloud", "Gemini (your own key)", "Fast and accurate. You paste your own free Google API key; your descriptions go from this device straight to Google.")}
-        {option("chrome", "sparkles", "Chrome built-in AI", "Free, private and works offline. Gemini Nano runs inside desktop Chrome — no key needed. A little less sharp than Gemini.", pickChrome)}
-        {option("device", "cpu", "On-device (experimental)", "Private and works offline after a one-time download. Slower and less accurate than the cloud.")}
+        {option("chrome", "sparkles", "Chrome built-in AI", "The default. Free, private and works offline. Gemini Nano runs inside desktop Chrome, no key needed.", pickChrome)}
+        {option("device", "cpu", "On-device model", "Private and works offline after a one-time download. Slower and less accurate.")}
+        {option("cloud", "cloud", "Gemini (your own key)", "Fast and accurate. Your descriptions go from this device straight to Google. Works on phones.")}
       </div>
+
+      <section className="card sm" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Try the next one if this can&apos;t run</div>
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 3, lineHeight: 1.45 }}>
+              Order: Chrome AI, then on-device, then Gemini. Only engines that are set up on this device are used.
+            </div>
+          </div>
+          <Toggle
+            label="Fall back to the next engine"
+            on={fallback}
+            onChange={(v) => {
+              setFallback(v);
+              setFallbackState(v);
+            }}
+          />
+        </div>
+        <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+          {last
+            ? `Last check: “${last.text.length > 40 ? last.text.slice(0, 40) + "…" : last.text}” → ${Math.round(last.kcal)} kcal with ${aiLabel(last.engine)} in ${(last.ms / 1000).toFixed(1)} s.`
+            : "No check yet. Write something in your note and it shows up here."}
+        </div>
+      </section>
 
       <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="label">Chrome built-in AI</div>
@@ -245,7 +277,7 @@ export default function AiSettings() {
         )}
         <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
           {CHROME_AI_REQUIREMENTS} It estimates from what the model already knows — it can&apos;t search the web — so
-          double-check unusual dishes. If you&apos;re on a phone, use Gemini.
+          double-check unusual dishes. On a phone, Chrome&apos;s built-in AI isn&apos;t available, so Gemini or the on-device model is used instead.
         </p>
       </section>
 

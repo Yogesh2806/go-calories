@@ -8,7 +8,7 @@ import { useApp } from "@/lib/app";
 import Composer from "./Composer";
 
 const NAV = [
-  { href: "/", label: "Home", tab: "Today", icon: "home" as const },
+  { href: "/", label: "Today", tab: "Today", icon: "home" as const },
   { href: "/calendar", label: "Calendar", tab: "Calendar", icon: "calendar" as const },
   { href: "/profile", label: "Profile", tab: "Profile", icon: "user" as const },
 ];
@@ -39,21 +39,24 @@ export default function Shell({
   nav = true,
   narrow = false,
   composer = false,
+  logDate,
 }: {
   children: ReactNode;
   nav?: boolean;
   narrow?: boolean;
-  /** Show the note-style composer bar above the nav (Today). It replaces the + button. */
+  /** Show the saved-meals / barcode pill above the nav (the journal). */
   composer?: boolean;
+  /** The day the pill's actions add to (defaults to today). */
+  logDate?: string;
 }) {
   const path = usePathname() ?? "/";
   const paper = useApp().profile?.style === "paper";
-  const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+  const isActive = (href: string) => (href === "/" ? path === "/" || path.startsWith("/day/") : path.startsWith(href));
   return (
     <div className={`scr${nav ? " with-rail" : ""}`}>
       <div className="blob" />
       <main className={`page${nav ? "" : " tight"}${narrow ? " narrow" : ""}${nav && composer ? " has-composer" : ""}`}>{children}</main>
-      {nav && composer && <Composer />}
+      {nav && composer && <Composer logDate={logDate} />}
       {nav && paper && (
         <nav className="tabbar" aria-label="Primary">
           <div className="tabbar-inner">
@@ -83,11 +86,6 @@ export default function Shell({
                   </Link>
                 ))}
               </nav>
-              {!composer && (
-                <Link href="/write" className="fab" aria-label="Log food">
-                  <Icon name="plus" size={26} stroke={2.2} />
-                </Link>
-              )}
             </div>
           </div>
           <nav className="rail" aria-label="Primary">
@@ -101,11 +99,6 @@ export default function Shell({
                 <Icon name={n.icon} size={22} />
               </Link>
             ))}
-            {!composer && (
-              <Link href="/write" className="fab" aria-label="Log food">
-                <Icon name="plus" size={22} stroke={2.2} />
-              </Link>
-            )}
           </nav>
         </>
       )}

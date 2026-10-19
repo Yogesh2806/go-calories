@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Icon, { MEAL_ICON } from "./Icon";
 import { MEALS, MEAL_LABEL, type FoodDraft, type Meal, type Nutrition } from "@/lib/types";
 import { num } from "@/lib/nutrition";
@@ -45,8 +46,9 @@ export function Sheet({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
-  if (!open) return null;
-  return (
+  if (!open || typeof document === "undefined") return null;
+  // Rendered on <body> so the sheet sits above the floating add pill and the tab bar.
+  return createPortal(
     <div className="sheet-backdrop" onClick={onClose}>
       <div
         className="sheet"
@@ -64,7 +66,8 @@ export function Sheet({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

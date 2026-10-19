@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Entry, Meal, Preset, Profile, Source } from "./types";
 import { MEALS } from "./types";
-import { DEFAULT_SPLIT } from "./nutrition";
+import { DEFAULT_FAT_PCT, PROTEIN_PER_KG } from "./nutrition";
 
 export interface Snapshot {
   profile: Profile | null;
@@ -166,11 +166,9 @@ function profileFromRow(r: Row): Profile {
     targetWeightKg: n(r.target_weight_kg),
     activity: r.activity ?? "light",
     calorieGoal: n(r.calorie_goal) || 2000,
-    split: {
-      protein: n(r.split_protein) || DEFAULT_SPLIT.protein,
-      carbs: n(r.split_carbs) || DEFAULT_SPLIT.carbs,
-      fat: n(r.split_fat) || DEFAULT_SPLIT.fat,
-    },
+    sex: r.sex === "male" || r.sex === "female" ? r.sex : null,
+    proteinPerKg: n(r.protein_per_kg) || PROTEIN_PER_KG[(r.goal ?? "maintain") as keyof typeof PROTEIN_PER_KG] || 1.6,
+    fatPct: n(r.fat_pct) || DEFAULT_FAT_PCT,
     units: r.units ?? "metric",
     accent: r.accent ?? "graphite",
     theme: r.theme ?? "system",
@@ -190,9 +188,9 @@ function profileToRow(p: Profile, userId: string): Row {
     target_weight_kg: p.targetWeightKg,
     activity: p.activity,
     calorie_goal: p.calorieGoal,
-    split_protein: p.split.protein,
-    split_carbs: p.split.carbs,
-    split_fat: p.split.fat,
+    sex: p.sex,
+    protein_per_kg: p.proteinPerKg,
+    fat_pct: p.fatPct,
     units: p.units,
     accent: p.accent,
     theme: p.theme,
