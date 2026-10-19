@@ -1,4 +1,4 @@
-import type { AccentKey } from "./types";
+import type { AccentKey, UiStyle } from "./types";
 
 export const ACCENT_LABEL: Record<AccentKey, string> = {
   graphite: "Graphite",
@@ -34,7 +34,14 @@ export function applyAccent(key: AccentKey): void {
   s.setProperty("--accent-on-d", c.onD);
 }
 
-export function resolveDark(pref: "light" | "dark" | "system"): boolean {
+/** Sets the visual style on <html>; CSS keys all the Paper / Mono Glass tokens off it. */
+export function applyStyle(style: UiStyle): void {
+  document.documentElement.dataset.style = style;
+}
+
+/** Paper is light-only for now, so it never goes dark whatever the theme preference says. */
+export function resolveDark(pref: "light" | "dark" | "system", style: UiStyle = "glass"): boolean {
+  if (style === "paper") return false;
   if (pref === "dark") return true;
   if (pref === "light") return false;
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -42,8 +49,10 @@ export function resolveDark(pref: "light" | "dark" | "system"): boolean {
 
 /** Runs before first paint (inlined into <head>) so there is no theme flash. */
 export const THEME_BOOT_SCRIPT = `(function(){try{
+var st=localStorage.getItem('gc:style')==='paper'?'paper':'glass';
+document.documentElement.dataset.style=st;
 var t=localStorage.getItem('gc:theme')||'system';
-var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+var d=st!=='paper'&&(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches));
 if(d)document.documentElement.classList.add('dark');
 var a=localStorage.getItem('gc:accent');
 if(a){var m=JSON.parse(a);var s=document.documentElement.style;

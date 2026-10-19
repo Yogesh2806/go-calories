@@ -12,6 +12,9 @@ export type Goal = "lose" | "maintain" | "gain";
 export type Activity = "sedentary" | "light" | "moderate" | "active";
 export type Units = "metric" | "imperial";
 export type ThemePref = "light" | "dark" | "system";
+/** Visual style of the whole app. Paper is light-only for now. */
+export type UiStyle = "paper" | "glass";
+export const STYLE_LABEL: Record<UiStyle, string> = { paper: "Paper", glass: "Mono Glass" };
 export type AiMode = "cloud" | "chrome" | "device";
 export type Source = "manual" | "barcode" | "describe" | "preset";
 
@@ -76,6 +79,7 @@ export interface Profile {
   units: Units;
   accent: AccentKey;
   theme: ThemePref;
+  style: UiStyle;
   aiMode: AiMode;
   onboarded: boolean;
 }

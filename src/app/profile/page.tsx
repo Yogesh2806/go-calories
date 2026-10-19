@@ -9,7 +9,7 @@ import InstallHint from "@/components/InstallHint";
 import Icon from "@/components/Icon";
 import { Field, NumInput, Sheet, Toggle } from "@/components/ui";
 import { ACCENT_COLORS, ACCENT_LABEL, resolveDark } from "@/lib/theme";
-import { ACCENT_KEYS, type Profile } from "@/lib/types";
+import { ACCENT_KEYS, STYLE_LABEL, type Profile, type UiStyle } from "@/lib/types";
 import { formatHeight, formatWeight, goalLabel, num } from "@/lib/nutrition";
 
 type Editing = null | "body" | "calories" | "split";
@@ -22,7 +22,8 @@ export default function ProfilePage() {
 
   if (!ok || !app.profile) return <Splash />;
   const p = app.profile;
-  const dark = typeof window !== "undefined" && resolveDark(p.theme);
+  const paper = p.style === "paper";
+  const dark = typeof window !== "undefined" && resolveDark(p.theme, p.style);
   const split = `${p.split.protein} / ${p.split.carbs} / ${p.split.fat}`;
   const goalLine =
     p.goal === "maintain"
@@ -97,27 +98,57 @@ export default function ProfilePage() {
       <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className="label">Settings</div>
         <div className="card list">
+          <div className="sub" style={{ padding: "14px 0", display: "flex", flexDirection: "column", gap: 12 }}>
+            <span style={{ fontSize: 14.5 }}>Style</span>
+            <div style={{ display: "flex", gap: 12 }} role="group" aria-label="Style">
+              {(["paper", "glass"] as UiStyle[]).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="style-tile"
+                  aria-pressed={p.style === k}
+                  onClick={() => app.saveProfile({ style: k })}
+                >
+                  <StylePreview kind={k} />
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 600 }}>
+                    {STYLE_LABEL[k]}
+                    {p.style === k && <Icon name="check" size={15} stroke={2.4} />}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <span className="muted" style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+              {paper ? "Warm paper and serif type, like a notebook." : "The original monochrome glass look."} Switches instantly and follows you to your other devices.
+            </span>
+          </div>
           <div className="row">
             <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Icon name={dark ? "moon" : "sun"} size={18} />
               Appearance
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 14, color: "var(--ink-2)" }}>
-                {p.theme === "system" ? "Auto" : p.theme === "dark" ? "Dark" : "Light"}
-              </span>
-              <Toggle
-                label="Dark mode"
-                on={dark}
-                onChange={(v) => app.saveProfile({ theme: v ? "dark" : "light" })}
-              />
+              {!paper && (
+                <span style={{ fontSize: 14, color: "var(--ink-2)" }}>
+                  {p.theme === "system" ? "Auto" : p.theme === "dark" ? "Dark" : "Light"}
+                </span>
+              )}
+              {paper ? (
+                <span className="muted" style={{ fontSize: 12.5 }}>Paper is light only for now</span>
+              ) : (
+                <Toggle
+                  label="Dark mode"
+                  on={dark}
+                  onChange={(v) => app.saveProfile({ theme: v ? "dark" : "light" })}
+                />
+              )}
             </span>
           </div>
-          {p.theme !== "system" && (
+          {!paper && p.theme !== "system" && (
             <button type="button" className="row" style={{ fontSize: 13, color: "var(--ink-3)" }} onClick={() => app.saveProfile({ theme: "system" })}>
               Match my device instead
             </button>
           )}
+          {!paper && (
           <div className="sub" style={{ padding: "14px 0", display: "flex", flexDirection: "column", gap: 12 }}>
             <span style={{ fontSize: 14.5 }}>Accent Color</span>
             <div className="scroll-x" style={{ gap: 12, padding: 4 }}>
@@ -150,6 +181,23 @@ export default function ProfilePage() {
               })}
             </div>
           </div>
+          )}
+          <Link href="/streaks" className="row">
+            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Icon name="flame" size={18} />
+              Streaks &amp; reminders
+            </span>
+            <Icon name="chevR" size={14} style={{ color: "var(--ink-2)" }} />
+          </Link>
+          <Link href="/saved" className="row">
+            <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Icon name="bookmark" size={18} />
+              Saved meals
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--ink-2)" }}>
+              {app.presets.length} <Icon name="chevR" size={14} />
+            </span>
+          </Link>
           <Link href="/settings/ai" className="row">
             <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Icon name="sparkles" size={18} />
@@ -329,5 +377,44 @@ function SplitForm({ profile, onClose, onSave }: Omit<SheetProps, "open">) {
         Save
       </button>
     </>
+  );
+}
+
+/** A tiny drawing of each style, so the choice is visual. */
+function StylePreview({ kind }: { kind: UiStyle }) {
+  const paper = kind === "paper";
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        height: 92,
+        borderRadius: 12,
+        padding: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        background: paper ? "#F6F1E7" : "#FBFBFA",
+        border: "1px solid rgba(0,0,0,0.08)",
+        position: "relative",
+        overflow: "hidden",
+        color: paper ? "#2A2520" : "#121212",
+      }}
+    >
+      <div style={{ fontFamily: paper ? "Georgia, 'Times New Roman', serif" : "inherit", fontSize: 17, fontWeight: paper ? 500 : 700, lineHeight: 1 }}>Today</div>
+      <div style={{ height: 5, borderRadius: 3, background: paper ? "#E4D9C4" : "rgba(0,0,0,0.08)", overflow: "hidden" }}>
+        <div style={{ width: "55%", height: "100%", background: paper ? "#C2650F" : "#121212" }} />
+      </div>
+      {paper ? (
+        <>
+          <div style={{ borderBottom: "1.5px solid #2A2520", height: 1, marginTop: 2 }} />
+          <div style={{ borderBottom: "1px dashed rgba(42,37,32,0.3)", height: 1, marginTop: 4 }} />
+        </>
+      ) : (
+        <div style={{ height: 22, borderRadius: 9, background: "rgba(255,255,255,0.9)", border: "1px solid rgba(0,0,0,0.06)", marginTop: 2 }} />
+      )}
+      {!paper && (
+        <div style={{ position: "absolute", left: "50%", bottom: 6, transform: "translateX(-50%)", width: 44, height: 12, borderRadius: 6, background: "rgba(20,20,22,0.85)" }} />
+      )}
+    </div>
   );
 }

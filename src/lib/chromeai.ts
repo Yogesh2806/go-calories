@@ -93,6 +93,7 @@ const SCHEMA = {
           fiber_g: { type: "number" },
           sugar_g: { type: "number" },
           sodium_mg: { type: "number" },
+          basis: { type: "string" },
         },
         required: ["name", "serving", "calories", "protein_g", "carbs_g", "fat_g"],
       },

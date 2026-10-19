@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import Icon from "./Icon";
+import { useApp } from "@/lib/app";
+import Composer from "./Composer";
 
 const NAV = [
-  { href: "/", label: "Home", icon: "home" as const },
-  { href: "/calendar", label: "Calendar", icon: "calendar" as const },
-  { href: "/profile", label: "Profile", icon: "user" as const },
+  { href: "/", label: "Home", tab: "Today", icon: "home" as const },
+  { href: "/calendar", label: "Calendar", tab: "Calendar", icon: "calendar" as const },
+  { href: "/profile", label: "Profile", tab: "Profile", icon: "user" as const },
 ];
 
 export function Splash() {
@@ -36,18 +38,36 @@ export default function Shell({
   children,
   nav = true,
   narrow = false,
+  composer = false,
 }: {
   children: ReactNode;
   nav?: boolean;
   narrow?: boolean;
+  /** Show the note-style composer bar above the nav (Today). It replaces the + button. */
+  composer?: boolean;
 }) {
   const path = usePathname() ?? "/";
+  const paper = useApp().profile?.style === "paper";
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
   return (
     <div className={`scr${nav ? " with-rail" : ""}`}>
       <div className="blob" />
-      <main className={`page${nav ? "" : " tight"}${narrow ? " narrow" : ""}`}>{children}</main>
-      {nav && (
+      <main className={`page${nav ? "" : " tight"}${narrow ? " narrow" : ""}${nav && composer ? " has-composer" : ""}`}>{children}</main>
+      {nav && composer && <Composer />}
+      {nav && paper && (
+        <nav className="tabbar" aria-label="Primary">
+          <div className="tabbar-inner">
+            {NAV.map((n) => (
+              <Link key={n.href} href={n.href} aria-label={n.label} aria-current={isActive(n.href) ? "page" : undefined}>
+                <Icon name={n.icon} size={22} stroke={isActive(n.href) ? 1.9 : 1.7} />
+                <span>{n.tab}</span>
+                <i />
+              </Link>
+            ))}
+          </div>
+        </nav>
+      )}
+      {nav && !paper && (
         <>
           <div className="dock-wrap">
             <div className="dock-inner">
@@ -63,9 +83,11 @@ export default function Shell({
                   </Link>
                 ))}
               </nav>
-              <Link href="/add" className="fab" aria-label="Log food">
-                <Icon name="plus" size={26} stroke={2.2} />
-              </Link>
+              {!composer && (
+                <Link href="/write" className="fab" aria-label="Log food">
+                  <Icon name="plus" size={26} stroke={2.2} />
+                </Link>
+              )}
             </div>
           </div>
           <nav className="rail" aria-label="Primary">
@@ -79,9 +101,11 @@ export default function Shell({
                 <Icon name={n.icon} size={22} />
               </Link>
             ))}
-            <Link href="/add" className="fab" aria-label="Log food">
-              <Icon name="plus" size={22} stroke={2.2} />
-            </Link>
+            {!composer && (
+              <Link href="/write" className="fab" aria-label="Log food">
+                <Icon name="plus" size={22} stroke={2.2} />
+              </Link>
+            )}
           </nav>
         </>
       )}

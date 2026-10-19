@@ -174,6 +174,7 @@ function profileFromRow(r: Row): Profile {
     units: r.units ?? "metric",
     accent: r.accent ?? "graphite",
     theme: r.theme ?? "system",
+    style: r.style === "paper" ? "paper" : "glass",
     aiMode: r.ai_mode ?? "cloud",
     onboarded: Boolean(r.onboarded),
   };
@@ -195,6 +196,7 @@ function profileToRow(p: Profile, userId: string): Row {
     units: p.units,
     accent: p.accent,
     theme: p.theme,
+    style: p.style,
     ai_mode: p.aiMode,
     onboarded: p.onboarded,
     updated_at: new Date().toISOString(),

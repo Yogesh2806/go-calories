@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, useGuard } from "@/lib/app";
 import Shell, { BackHeader, Splash } from "@/components/Shell";
@@ -61,6 +61,12 @@ export default function AddPage() {
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [items, setItems] = useState<Draft[]>([]);
+
+  // /add?view=barcode (from the Today composer) opens straight on that tool
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("view");
+    if (v === "barcode" || v === "presets" || v === "describe") setView(v);
+  }, []);
 
   const date = app.logDate || todayKey();
   const isToday = date === todayKey();

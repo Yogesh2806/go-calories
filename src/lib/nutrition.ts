@@ -178,3 +178,55 @@ export function uid(): string {
 export function goalLabel(g: Goal): string {
   return g === "lose" ? "Lose weight" : g === "gain" ? "Gain weight" : "Maintain weight";
 }
+
+/* ---------- streaks ---------- */
+
+export interface StreakInfo {
+  /** consecutive logged days ending today (or yesterday, so today isn't a broken streak yet) */
+  current: number;
+  best: number;
+  /** true when today already has at least one entry */
+  loggedToday: boolean;
+  /** last 7 days, oldest first, ending today */
+  week: { key: string; label: string; logged: boolean; isToday: boolean }[];
+  totalDays: number;
+}
+
+export function streakInfo(entries: Pick<Entry, "logDate">[], now = new Date()): StreakInfo {
+  const days = new Set(entries.map((e) => e.logDate));
+  const today = toKey(now);
+  const loggedToday = days.has(today);
+  let cursor = loggedToday ? now : addDays(now, -1);
+  let current = 0;
+  while (days.has(toKey(cursor))) {
+    current++;
+    cursor = addDays(cursor, -1);
+  }
+  const sorted = [...days].sort();
+  let best = 0;
+  let run = 0;
+  let prev: Date | null = null;
+  for (const k of sorted) {
+    const d = fromKey(k);
+    run = prev && toKey(addDays(prev, 1)) === k ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(now, i - 6);
+    const key = toKey(d);
+    return {
+      key,
+      label: d.toLocaleDateString("en-US", { weekday: "narrow" }),
+      logged: days.has(key),
+      isToday: key === today,
+    };
+  });
+  return { current, best, loggedToday, week, totalDays: days.size };
+}
+
+/** Normalises a food name so "Dal tadka" and "dal  tadka " match. */
+export function foodKey(name: string, serving: string): string {
+  const n = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return `${n(name)}|${n(serving)}`;
+}

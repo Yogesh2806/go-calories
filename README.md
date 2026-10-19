@@ -9,10 +9,14 @@ It is the web twin of the iOS design in `../Go-Calorie` — same look, same flow
 
 - Sign in with Google (Supabase) — or "Continue without an account" (data stays on the device)
 - Onboarding: body stats → goal & activity → calorie / macro plan
-- Home, Today's Consumption (macros, micros, "still need today"), Calendar (week / month / year), Profile
-- Log food four ways: **Manual**, **Barcode** (camera + Open Food Facts), **Describe** (AI), **Presets**
-- Edit / delete any logged item
-- Light / dark / auto, 9 accent colours, metric / imperial display
+- **Note-first Today**: calories and macros left, meals grouped into sections with the time, and a "what did you eat?" bar
+- **Write a meal**: type it like a note, the calories fill in as you go; tap a line for a "how I got this" thought-process sheet
+  (portion stepper, reasoning, lock an estimate so it never changes); save a whole note as a **saved meal**
+- Also: **Barcode** (camera + Open Food Facts), search, manual entry; Calendar (week / month / year), macros & micros per day
+- Edit mode with **Undo** for deletes and logs; **streaks**, badges and meal **reminders** (in-app nudge on Today; no push yet)
+- Two visual styles, switched in Profile → Style: **Paper** (warm, serif, light only) and **Mono Glass** (the original look,
+  with light / dark / auto and 9 accent colours). The choice is stored on the profile and on the device, so there is no flash on load.
+- Metric / imperial display
 - AI Food Parsing settings: **Gemini (your own key)**, **Chrome's built-in AI** (Gemini Nano, free, desktop Chrome) or an **experimental on-device model** (WebGPU, ~1 GB, offline)
 - Installable PWA with offline app shell
 
@@ -45,7 +49,7 @@ The model defaults to `gemini-3.5-flash` and can be changed under *Advanced*.
 ## 2. Supabase (sign-in + sync)
 
 1. Create a project at <https://supabase.com/dashboard>.
-2. **SQL editor** → paste `supabase/migrations/0001_init.sql` → Run. (Creates `profiles`, `food_entries`, `presets` with
+2. **SQL editor** → paste `supabase/migrations/0001_init.sql`, then `0002…` and `0003…` in order → Run. (Creates `profiles`, `food_entries`, `presets` with
    Row Level Security so users only ever see their own rows.)
 3. **Project Settings → API** → copy the Project URL and the `anon` / publishable key into `.env.local`:
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.

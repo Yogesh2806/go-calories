@@ -12,6 +12,8 @@ export interface ParsedItem {
   fiber: number;
   sugar: number;
   sodium: number;
+  /** One short line on how the calories were worked out ("97 kcal per 100 g × 140 g"). May be empty. */
+  basis: string;
 }
 
 export const DESCRIBE_SYSTEM = `You are the nutrition engine inside a calorie-tracking app.
@@ -25,7 +27,8 @@ Rules:
 - calories in kcal; protein, carbs, fat, fiber, sugar in grams; sodium in milligrams. Use plain numbers, never ranges.
 - "meal" is one of: breakfast, lunch, snacks, drinks, dinner — only if the text implies it (e.g. "coffee" is drinks); otherwise omit it.
 - Be realistic, not optimistic. Prefer common reference values (IFCT / USDA) over guesses.
-- Respond with JSON only, matching exactly: {"items":[{"name":string,"serving":string,"meal":string?,"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number,"fiber_g":number,"sugar_g":number,"sodium_mg":number}]}`;
+- "basis" is one short plain sentence showing how the calories were worked out, e.g. "About 97 kcal per 100 g × 140 g, plus roughly 1 tbsp ghee (44 kcal)". Keep it under 140 characters.
+- Respond with JSON only, matching exactly: {"items":[{"name":string,"serving":string,"meal":string?,"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number,"fiber_g":number,"sugar_g":number,"sodium_mg":number,"basis":string}]}`;
 
 function n(v: unknown): number {
   const x = typeof v === "number" ? v : parseFloat(String(v ?? ""));
@@ -73,6 +76,7 @@ export function normalizeItems(raw: unknown): ParsedItem[] {
       fiber: n(o.fiber_g ?? o.fiber),
       sugar: n(o.sugar_g ?? o.sugar),
       sodium: n(o.sodium_mg ?? o.sodium),
+      basis: String(o.basis ?? "").trim().slice(0, 240),
     });
   }
   return out;

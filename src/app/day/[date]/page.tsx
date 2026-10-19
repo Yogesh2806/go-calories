@@ -6,7 +6,7 @@ import { useApp, useGuard } from "@/lib/app";
 import Shell, { BackHeader, Splash } from "@/components/Shell";
 import EntryRow from "@/components/EntryRow";
 import Icon, { MEAL_ICON } from "@/components/Icon";
-import { MEAL_LABEL } from "@/lib/types";
+import { MEAL_LABEL, type Entry } from "@/lib/types";
 import {
   formatTime,
   fromKey,
@@ -31,6 +31,7 @@ export default function DayPage({ params }: { params: Promise<{ date: string }> 
   const app = useApp();
   const router = useRouter();
   const [open, setOpen] = useState(true);
+  const [edit, setEdit] = useState(false);
   const valid = isValidKey(date);
   const isToday = date === todayKey();
 
@@ -54,6 +55,16 @@ export default function DayPage({ params }: { params: Promise<{ date: string }> 
     day: "numeric",
   });
   const groups = groupByMeal(entries);
+
+  async function remove(e: Entry) {
+    const gone = { ...e };
+    try {
+      await app.deleteEntry(e.id);
+      app.notify(`Removed ${gone.name}`, { label: "Undo", run: () => void app.addEntries([gone]) });
+    } catch {
+      /* deleteEntry already showed the error */
+    }
+  }
 
   const macros = [
     { key: "protein", label: "Protein", v: totals.protein, g: goals.protein, c: "var(--c-protein)" },
@@ -83,7 +94,7 @@ export default function DayPage({ params }: { params: Promise<{ date: string }> 
             aria-label="Add food to this day"
             onClick={() => {
               app.setLogDate(date);
-              router.push("/add");
+              router.push("/write");
             }}
           >
             <Icon name="plus" size={18} />
@@ -125,6 +136,13 @@ export default function DayPage({ params }: { params: Promise<{ date: string }> 
               </button>
               {open && (
                 <div style={{ marginTop: 14 }}>
+                  {groups.length > 0 && (
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                      <button type="button" className="pill" style={{ height: 30 }} onClick={() => setEdit((v) => !v)} aria-pressed={edit}>
+                        {edit ? "Done" : "Edit"}
+                      </button>
+                    </div>
+                  )}
                   {groups.length === 0 && (
                     <p className="muted" style={{ fontSize: 13.5, margin: 0 }}>Nothing logged for this day.</p>
                   )}
@@ -145,7 +163,16 @@ export default function DayPage({ params }: { params: Promise<{ date: string }> 
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                         {g.items.map((e) => (
-                          <EntryRow key={e.id} entry={e} sub={`${e.serving} · ${formatTime(e.loggedAt)}`} />
+                          <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            {edit && (
+                              <button type="button" className="line-del" aria-label={`Delete ${e.name}`} onClick={() => void remove(e)} style={{ marginLeft: -10 }}>
+                                <Icon name="trash" size={19} />
+                              </button>
+                            )}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <EntryRow entry={e} sub={`${e.serving} · ${formatTime(e.loggedAt)}`} />
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </div>

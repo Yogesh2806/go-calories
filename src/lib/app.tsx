@@ -14,9 +14,9 @@ import { useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabase, supabaseConfigured } from "./supabase";
 import { localRepo, supabaseRepo, type Repo } from "./repo";
-import type { Entry, Preset, Profile } from "./types";
+import type { Entry, Preset, Profile, UiStyle } from "./types";
 import { DEFAULT_SPLIT, dailyCalorieGoal } from "./nutrition";
-import { ACCENT_COLORS, applyAccent, resolveDark } from "./theme";
+import { ACCENT_COLORS, applyAccent, applyStyle, resolveDark } from "./theme";
 
 export interface AppUser {
   id: string;
@@ -49,7 +49,13 @@ interface AppCtx {
   addPreset: (p: Preset) => Promise<void>;
   deletePreset: (id: string) => Promise<void>;
   getToken: () => Promise<string | null>;
-  notify: (msg: string) => void;
+  /** Shows a short message; with `action` it gets a button (e.g. Undo) and stays a little longer. */
+  notify: (msg: string, action?: ToastAction) => void;
+}
+
+export interface ToastAction {
+  label: string;
+  run: () => void;
 }
 
 const Ctx = createContext<AppCtx | null>(null);
@@ -87,9 +93,19 @@ function defaultProfile(user: AppUser): Profile {
     units: "metric",
     accent: "graphite",
     theme: "system",
+    style: readStoredStyle(),
     aiMode: "cloud",
     onboarded: false,
   };
+}
+
+/** The style chosen on this device (set before login too), so a fresh profile starts out matching it. */
+function readStoredStyle(): UiStyle {
+  try {
+    return localStorage.getItem("gc:style") === "paper" ? "paper" : "glass";
+  } catch {
+    return "glass";
+  }
 }
 
 function userFromSession(s: Session): AppUser {
@@ -114,14 +130,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [logDate, setLogDate] = useState<string>("");
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; action?: ToastAction } | null>(null);
   const repoRef = useRef<Repo | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const notify = useCallback((msg: string) => {
-    setToast(msg);
+  const notify = useCallback((msg: string, action?: ToastAction) => {
+    setToast({ msg, action });
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3200);
+    toastTimer.current = setTimeout(() => setToast(null), action ? 6500 : 3200);
   }, []);
 
   /* ----- auth state ----- */
@@ -189,7 +205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .load()
       .then((snap) => {
         if (cancelled) return;
-        setProfile(snap.profile ?? defaultProfile(user));
+        setProfile(snap.profile ? { ...snap.profile, style: snap.profile.style === "paper" ? "paper" : "glass" } : defaultProfile(user));
         setEntries(snap.entries);
         setPresets(snap.presets);
         setReady(true);
@@ -206,11 +222,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, mode]);
 
-  /* ----- theme + accent ----- */
+  /* ----- style + theme + accent ----- */
   const themePref = profile?.theme ?? null;
+  const uiStyle = profile?.style ?? null;
   const accent = profile?.accent ?? null;
   useEffect(() => {
-    if (!themePref) return;
+    if (!uiStyle) return;
+    applyStyle(uiStyle);
+    try {
+      localStorage.setItem("gc:style", uiStyle);
+    } catch {
+      /* ignore */
+    }
+  }, [uiStyle]);
+  useEffect(() => {
+    if (!themePref || !uiStyle) return;
     try {
       localStorage.setItem("gc:theme", themePref);
     } catch {
@@ -218,18 +244,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
-      const dark = resolveDark(themePref);
+      const dark = resolveDark(themePref, uiStyle);
       document.documentElement.classList.toggle("dark", dark);
       document
-        .querySelector('meta[name="theme-color"]')
-        ?.setAttribute("content", dark ? "#18191B" : "#FBFBFA");
+        .querySelectorAll('meta[name="theme-color"]')
+        .forEach((m) => m.setAttribute("content", uiStyle === "paper" ? "#F6F1E7" : dark ? "#18191B" : "#FBFBFA"));
     };
     apply();
     if (themePref === "system") {
       mql.addEventListener("change", apply);
       return () => mql.removeEventListener("change", apply);
     }
-  }, [themePref]);
+  }, [themePref, uiStyle]);
   useEffect(() => {
     if (!accent) return;
     applyAccent(accent);
@@ -431,7 +457,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {children}
       {toast && (
         <div className="toast" role="status">
-          {toast}
+          {toast.msg}
+          {toast.action && (
+            <button
+              type="button"
+              className="undo-btn"
+              onClick={() => {
+                const run = toast.action?.run;
+                setToast(null);
+                run?.();
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
     </Ctx.Provider>
