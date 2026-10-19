@@ -23,6 +23,12 @@ import {
   setGeminiKey,
   setGeminiModel,
 } from "@/lib/gemini";
+import {
+  CHROME_AI_REQUIREMENTS,
+  chromeAvailability,
+  chromePrepare,
+  type ChromeAvailability,
+} from "@/lib/chromeai";
 import type { AiMode } from "@/lib/types";
 
 export default function AiSettings() {
@@ -34,6 +40,11 @@ export default function AiSettings() {
   const [progress, setProgress] = useState<number | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Chrome built-in AI
+  const [chromeAvail, setChromeAvail] = useState<ChromeAvailability | null>(null);
+  const [chromeProgress, setChromeProgress] = useState<number | null>(null);
+  const [chromeMsg, setChromeMsg] = useState<string | null>(null);
 
   // Gemini key (stored in this browser only)
   const [savedKey, setSavedKey] = useState("");
@@ -47,6 +58,7 @@ export default function AiSettings() {
     setModel(getGeminiModel());
     setGpu(webgpuAvailable());
     isModelDownloaded().then(setDownloaded);
+    chromeAvailability().then(setChromeAvail);
   }, []);
 
   if (!ok || !app.profile) return <Splash />;
@@ -68,6 +80,36 @@ export default function AiSettings() {
       setError(e instanceof Error ? e.message : "The download failed. Check your connection and try again.");
     } finally {
       setProgress(null);
+    }
+  }
+
+  async function enableChrome() {
+    setChromeMsg(null);
+    setChromeProgress(0);
+    try {
+      await chromePrepare((f) => setChromeProgress(f));
+      setChromeAvail(await chromeAvailability());
+      await pick("chrome");
+    } catch (e) {
+      setChromeMsg(e instanceof Error ? e.message : "Couldn't turn on Chrome's built-in AI.");
+      setChromeAvail(await chromeAvailability());
+    } finally {
+      setChromeProgress(null);
+    }
+  }
+
+  function pickChrome() {
+    if (chromeAvail === "available") {
+      setChromeMsg(null);
+      pick("chrome");
+    } else {
+      setChromeMsg(
+        chromeAvail === "downloadable"
+          ? "Download the model below first, then it switches on."
+          : chromeAvail === "downloading"
+            ? "Chrome is still downloading the model — check back in a few minutes."
+            : "Chrome's built-in AI isn't available in this browser.",
+      );
     }
   }
 
@@ -108,14 +150,14 @@ export default function AiSettings() {
     }
   }
 
-  const option = (m: AiMode, icon: "cloud" | "cpu", title: string, desc: string) => {
+  const option = (m: AiMode, icon: "cloud" | "cpu" | "sparkles", title: string, desc: string, onPick: () => void = () => pick(m)) => {
     const on = mode === m;
     return (
       <button
         type="button"
         role="radio"
         aria-checked={on}
-        onClick={() => pick(m)}
+        onClick={onPick}
         className="card"
         style={{
           textAlign: "left",
@@ -149,8 +191,63 @@ export default function AiSettings() {
 
       <div role="radiogroup" aria-label="AI mode" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {option("cloud", "cloud", "Gemini (your own key)", "Fast and accurate. You paste your own free Google API key; your descriptions go from this device straight to Google.")}
+        {option("chrome", "sparkles", "Chrome built-in AI", "Free, private and works offline. Gemini Nano runs inside desktop Chrome — no key needed. A little less sharp than Gemini.", pickChrome)}
         {option("device", "cpu", "On-device (experimental)", "Private and works offline after a one-time download. Slower and less accurate than the cloud.")}
       </div>
+
+      <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="label">Chrome built-in AI</div>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Gemini Nano · free · on this device</div>
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 3, lineHeight: 1.5 }}>
+            {chromeAvail === null && "Checking this browser…"}
+            {chromeAvail === "unavailable" && "Not available in this browser."}
+            {chromeAvail === "downloadable" && "Supported here. Chrome downloads the model once (a few GB) and shares it with other sites."}
+            {chromeAvail === "downloading" && "Chrome is downloading the model in the background."}
+            {chromeAvail === "available" && "Ready on this device."}
+          </div>
+        </div>
+
+        {chromeProgress !== null && (
+          <div>
+            <div className="bar" style={{ height: 10 }}>
+              <i style={{ width: `${Math.round(chromeProgress * 100)}%` }} />
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>{Math.round(chromeProgress * 100)}% downloaded</div>
+          </div>
+        )}
+
+        {chromeAvail === "downloadable" && (
+          <button type="button" className="btn" disabled={chromeProgress !== null} onClick={enableChrome}>
+            <Icon name="download" size={18} />
+            {chromeProgress !== null ? "Downloading…" : "Download & turn on"}
+          </button>
+        )}
+        {chromeAvail === "downloading" && chromeProgress === null && (
+          <button type="button" className="chip" onClick={() => chromeAvailability().then(setChromeAvail)}>
+            Check again
+          </button>
+        )}
+        {chromeAvail === "available" && mode !== "chrome" && (
+          <button type="button" className="btn" onClick={() => pick("chrome")}>
+            Use Chrome built-in AI
+          </button>
+        )}
+        {chromeAvail === "available" && mode === "chrome" && (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "var(--ink-2)" }}>
+            <Icon name="check" size={18} /> In use
+          </span>
+        )}
+        {chromeMsg && (
+          <div role="status" style={{ fontSize: 13, lineHeight: 1.5, color: "var(--danger)" }}>
+            {chromeMsg}
+          </div>
+        )}
+        <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
+          {CHROME_AI_REQUIREMENTS} It estimates from what the model already knows — it can&apos;t search the web — so
+          double-check unusual dishes. If you&apos;re on a phone, use Gemini.
+        </p>
+      </section>
 
       <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div className="label">Gemini API key</div>

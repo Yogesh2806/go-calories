@@ -19,7 +19,7 @@ create table if not exists public.profiles (
   units text not null default 'metric' check (units in ('metric','imperial')),
   accent text not null default 'graphite',
   theme text not null default 'system' check (theme in ('light','dark','system')),
-  ai_mode text not null default 'cloud' check (ai_mode in ('cloud','device')),
+  ai_mode text not null default 'cloud' check (ai_mode in ('cloud','chrome','device')),
   onboarded boolean not null default false,
   updated_at timestamptz not null default now()
 );

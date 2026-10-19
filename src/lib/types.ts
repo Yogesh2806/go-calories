@@ -12,7 +12,7 @@ export type Goal = "lose" | "maintain" | "gain";
 export type Activity = "sedentary" | "light" | "moderate" | "active";
 export type Units = "metric" | "imperial";
 export type ThemePref = "light" | "dark" | "system";
-export type AiMode = "cloud" | "device";
+export type AiMode = "cloud" | "chrome" | "device";
 export type Source = "manual" | "barcode" | "describe" | "preset";
 
 export const ACCENT_KEYS = [

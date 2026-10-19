@@ -13,7 +13,7 @@ It is the web twin of the iOS design in `../Go-Calorie` — same look, same flow
 - Log food four ways: **Manual**, **Barcode** (camera + Open Food Facts), **Describe** (AI), **Presets**
 - Edit / delete any logged item
 - Light / dark / auto, 9 accent colours, metric / imperial display
-- AI Food Parsing settings: **Cloud (Gemini)** or an **experimental on-device model** (WebGPU, ~1 GB, offline)
+- AI Food Parsing settings: **Gemini (your own key)**, **Chrome's built-in AI** (Gemini Nano, free, desktop Chrome) or an **experimental on-device model** (WebGPU, ~1 GB, offline)
 - Installable PWA with offline app shell
 
 Not built yet (planned): Preset editor screen, Notifications, Units picker page, Apple Health (iOS only).

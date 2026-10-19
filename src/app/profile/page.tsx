@@ -156,7 +156,7 @@ export default function ProfilePage() {
               AI Food Parsing
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--ink-2)" }}>
-              {p.aiMode === "device" ? "On-device" : "Gemini"} <Icon name="chevR" size={14} />
+              {p.aiMode === "chrome" ? "Chrome AI" : p.aiMode === "device" ? "On-device" : "Gemini"} <Icon name="chevR" size={14} />
             </span>
           </Link>
           <button

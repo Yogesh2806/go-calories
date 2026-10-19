@@ -11,6 +11,7 @@ import { ItemEditor, Toggle, draftValid, fromDraft, nutritionOf, toDraft, type D
 import { defaultMeal, emptyDraft, fromKey, kcal, todayKey, uid } from "@/lib/nutrition";
 import { lookupBarcode } from "@/lib/openfoodfacts";
 import { isModelDownloaded, parseOnDevice, webgpuAvailable } from "@/lib/ondevice";
+import { parseWithChrome } from "@/lib/chromeai";
 import { getGeminiKey, parseWithGemini } from "@/lib/gemini";
 import type { ParsedItem } from "@/lib/describe";
 import type { Entry, FoodDraft, Preset, Source } from "@/lib/types";
@@ -165,7 +166,9 @@ export default function AddPage() {
     setParseError(null);
     try {
       let parsed: ParsedItem[];
-      if (app.profile?.aiMode === "device") {
+      if (app.profile?.aiMode === "chrome") {
+        parsed = await parseWithChrome(text.trim());
+      } else if (app.profile?.aiMode === "device") {
         if (!webgpuAvailable()) throw new Error("This browser doesn't support WebGPU. Switch to Gemini in AI Food Parsing settings.");
         if (!(await isModelDownloaded())) throw new Error("The on-device model isn't downloaded yet. Download it in AI Food Parsing settings.");
         parsed = await parseOnDevice(text.trim());
@@ -312,7 +315,8 @@ export default function AddPage() {
   }
 
   if (view === "describe") {
-    const deviceMode = app.profile.aiMode === "device";
+    const aiMode = app.profile.aiMode;
+    const deviceMode = aiMode === "device" || aiMode === "chrome";
     return (
       <Shell nav={false} narrow>
         <BackHeader title="Describe" subtitle={dateLabel ? `Logging to ${dateLabel}` : "Say what you ate, in plain English."} onBack={() => setView("menu")} />
@@ -337,7 +341,7 @@ export default function AddPage() {
         </button>
         <div className="muted" style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}>
           <Icon name={deviceMode ? "cpu" : "cloud"} size={14} />
-          {deviceMode ? "Running on this device" : "Gemini (your key)"} ·{" "}
+          {aiMode === "chrome" ? "Chrome built-in AI, on this device" : aiMode === "device" ? "Running on this device" : "Gemini (your key)"} ·{" "}
           <Link href="/settings/ai" style={{ textDecoration: "underline" }}>
             change
           </Link>
