@@ -18,11 +18,13 @@ import {
 } from "@/lib/ondevice";
 import {
   DEFAULT_GEMINI_MODEL,
+  checkGeminiKey,
   clearGeminiKey,
   getGeminiKey,
   getGeminiModel,
   maskKey,
   parseWithGemini,
+  pickGeminiModel,
   setGeminiKey,
   setGeminiModel,
 } from "@/lib/gemini";
@@ -137,13 +139,27 @@ export default function AiSettings() {
     setTesting(true);
     setKeyMsg(null);
     try {
-      await parseWithGemini("one banana", k, model.trim() || DEFAULT_GEMINI_MODEL);
+      // 1) Is the key valid, and which models can it use? (No answer is requested, so a busy model can't fail this.)
+      const available = await checkGeminiKey(k);
+      const typed = model.trim();
+      const chosen = typed && typed !== DEFAULT_GEMINI_MODEL ? typed : (pickGeminiModel(available) ?? DEFAULT_GEMINI_MODEL);
       setGeminiKey(k);
-      setGeminiModel(model);
+      setGeminiModel(chosen);
+      setModel(chosen);
       setSavedKey(k);
       setKeyInput("");
-      setKeyMsg({ ok: true, text: "Key works and is saved on this device." });
       await pick("cloud");
+      // 2) A real try, only to tell you how it is going. The key is already saved either way.
+      try {
+        await parseWithGemini("one banana", k, chosen);
+        setKeyMsg({ ok: true, text: `Key works and is saved on this device. Using ${chosen}.` });
+      } catch (e) {
+        const why = e instanceof Error ? e.message : "";
+        setKeyMsg({
+          ok: true,
+          text: `Key is valid and saved on this device (${chosen}). The test answer didn't come back: ${why} Logging will retry and switch models by itself.`,
+        });
+      }
     } catch (e) {
       setKeyMsg({ ok: false, text: e instanceof Error ? e.message : "Couldn't verify that key." });
     } finally {

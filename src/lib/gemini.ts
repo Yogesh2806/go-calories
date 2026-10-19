@@ -9,7 +9,7 @@ import { DESCRIBE_SYSTEM, extractJson, normalizeItems, type ParsedItem } from ".
 
 const KEY_STORE = "gc:geminiKey";
 const MODEL_STORE = "gc:geminiModel";
-export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 
 function read(k: string): string {
   try {
@@ -61,9 +61,22 @@ const SCHEMA = {
   required: ["items"],
 };
 
-function request(key: string, model: string, text: string, withSchema: boolean) {
+/** What to send. Newer Gemini models "think" before answering, which is slow and pointless for a food estimate, so we ask for
+ *  little thinking first and fall back to plainer requests if a model refuses the setting. */
+interface Rung {
+  schema: boolean;
+  think: boolean;
+}
+const LADDER: Rung[] = [
+  { schema: true, think: true },
+  { schema: true, think: false },
+  { schema: false, think: false },
+];
+
+function request(key: string, model: string, text: string, rung: Rung, timeoutMs: number) {
   const generationConfig: Record<string, unknown> = { temperature: 0.2, responseMimeType: "application/json" };
-  if (withSchema) generationConfig.responseSchema = SCHEMA;
+  if (rung.schema) generationConfig.responseSchema = SCHEMA;
+  if (rung.think) generationConfig.thinkingConfig = { thinkingLevel: "low" };
   return fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     {
@@ -74,7 +87,7 @@ function request(key: string, model: string, text: string, withSchema: boolean) 
         contents: [{ role: "user", parts: [{ text }] }],
         generationConfig,
       }),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     },
   );
 }
@@ -94,10 +107,11 @@ async function failure(res: Response, model: string): Promise<Error> {
   return new Error(`Gemini error ${res.status}. ${msg}`.trim().slice(0, 240));
 }
 
-/** Other Gemini models to try, in order, when the chosen one is busy or missing. */
-const FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
+/** Other Gemini models to try, in order, when the chosen one is busy, slow or missing. */
+const FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-3.6-flash"];
 const BUSY = new Set([429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const isTimeout = (e: unknown) => e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError");
 
 function readReply(data: {
   candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[];
@@ -112,24 +126,68 @@ function readReply(data: {
   return items;
 }
 
+/** Checks a key without asking for an answer (so a busy model can't fail it) and lists the models it can use. */
+export async function checkGeminiKey(key: string): Promise<string[]> {
+  let res: Response;
+  try {
+    res = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", {
+      headers: { "x-goog-api-key": key },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e) {
+    if (isTimeout(e)) throw new Error("Google took too long to answer. Try again.");
+    throw new Error("Couldn't reach Google. Check your connection.");
+  }
+  if (!res.ok) throw await failure(res, "");
+  const data = (await res.json()) as { models?: { name?: string; supportedGenerationMethods?: string[] }[] };
+  return (data.models ?? [])
+    .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+    .map((m) => (m.name ?? "").replace(/^models\//, ""))
+    .filter(Boolean);
+}
+
+/** The best fast model this key can use, from what Google says is available. */
+export function pickGeminiModel(available: string[]): string | null {
+  for (const m of [DEFAULT_GEMINI_MODEL, "gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-3.6-flash"]) if (available.includes(m)) return m;
+  const flash = available.filter((m) => /flash/.test(m) && !/(preview|exp|image|tts|live|audio|thinking)/.test(m));
+  return flash[0] ?? null;
+}
+
 /** Parses a plain-English meal description into food items using the user's own key.
- *  If the chosen model is busy (503), rate limited or missing, it retries once and then tries other Gemini models,
+ *  If the chosen model is busy (503), rate limited, slow or missing, it moves on to other Gemini models,
  *  so a spike on one model does not stop you logging. A wrong or blocked key stops straight away. */
 export async function parseWithGemini(text: string, key = getGeminiKey(), model = getGeminiModel()): Promise<ParsedItem[]> {
   if (!key) throw new Error("Add your Gemini API key in AI Food Parsing settings first.");
   const chain = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
   let firstError: Error | null = null;
+  let timedOut = false;
   try {
     for (const m of chain) {
       for (let attempt = 0; attempt < (m === model ? 2 : 1); attempt++) {
-        let res = await request(key, m, text, true);
-        if (res.status === 400) {
-          const retry = await request(key, m, text, false); // some models reject a response schema
-          if (retry.ok) res = retry;
+        let res: Response | null = null;
+        try {
+          for (const rung of LADDER) {
+            res = await request(key, m, text, rung, 14_000);
+            if (res.status !== 400) break;
+            let msg = "";
+            try {
+              msg = ((await res.clone().json()) as { error?: { message?: string } }).error?.message ?? "";
+            } catch {
+              /* ignore */
+            }
+            if (/api key/i.test(msg)) throw await failure(res, m); // the key itself is wrong: stop at once
+          }
+        } catch (e) {
+          if (isTimeout(e)) {
+            timedOut = true;
+            break; // too slow: try the next model
+          }
+          throw e;
         }
+        if (!res) break;
         if (res.ok) return readReply((await res.json()) as Parameters<typeof readReply>[0]);
         const err = await failure(res, m);
-        if (res.status === 400 || res.status === 401 || res.status === 403) throw err; // the key or the request itself is wrong
+        if (res.status === 401 || res.status === 403) throw err; // the key isn't allowed
         firstError ??= err;
         if (BUSY.has(res.status) && attempt === 0 && m === model) {
           await sleep(900); // one quick retry on the chosen model
@@ -138,10 +196,10 @@ export async function parseWithGemini(text: string, key = getGeminiKey(), model 
         break; // try the next model
       }
     }
-    throw firstError ?? new Error("Gemini didn't answer. Try again.");
+    if (firstError) throw firstError;
+    throw new Error(timedOut ? "Gemini took too long. Try again." : "Gemini didn't answer. Try again.");
   } catch (e) {
-    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError"))
-      throw new Error("Gemini took too long. Try again.");
+    if (isTimeout(e)) throw new Error("Gemini took too long. Try again.");
     if (e instanceof TypeError) throw new Error("Couldn't reach Gemini. Check your connection.");
     throw e;
   }
